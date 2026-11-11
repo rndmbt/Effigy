@@ -39,6 +39,8 @@ exit /b 1
 rem pinned Blender 5.2.2, downloaded and SHA-256 checked on first run
 uv run python -m server.blender_install || exit /b 1
 uv run python -m server.gltfpack_install || exit /b 1
+rem optional ComfyUI: isolated environment, only when selected in Setup; never starts the service
+uv run python -m server.comfyui_install --if-enabled >> "%LOG%" 2>&1 || echo Optional ComfyUI setup failed. Open Setup to retry or disable it. Details in run.log.
 rem the UI: built when missing or older than its source (a pull), npm ci first when its lock changed
 uv run python tools\ui_stale.py
 set "stale=%errorlevel%"

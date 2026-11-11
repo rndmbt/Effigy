@@ -274,6 +274,7 @@ def _cmd(job: jobs.Job, cmd: list[str], env: dict | None = None) -> tuple[int, l
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            start_new_session=True,
             text=True,
             encoding="utf-8",
             errors="replace",

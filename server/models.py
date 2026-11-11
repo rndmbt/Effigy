@@ -131,7 +131,8 @@ def _downloading() -> bool:
     """An install or a move of the models folder (server/install.py) is queued or running: files are
     changing."""
     return any(
-        j.step in ("install", "move_models") and j.status in ("queued", "running")
+        j.step in ("install", "install_comfyui", "move_models")
+        and j.status in ("queued", "running")
         for j in list(jobs.JOBS.values())
     )
 

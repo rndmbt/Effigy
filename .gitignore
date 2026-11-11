@@ -3,6 +3,7 @@
 /models/
 /blender/
 /gltfpack/
+/comfyui/
 /scratch/
 .venv*/
 .env

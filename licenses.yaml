@@ -3,6 +3,30 @@
 # Fields: name, kind (code|weights|tool|data), license, commercial,
 #         optional: region_note, attribution, flag, experimental
 
+# --- Optional external ComfyUI runtime (never imported by the MIT server or steps) ---
+- {name: ComfyUI, kind: tool, license: GPL-3.0, commercial: true, flag: "v0.44.0 source downloaded at a pinned commit and SHA-256; its own process and environment, no bundled weights or custom nodes"}
+- {name: comfyui-frontend-package, kind: code, license: GPL-3.0, commercial: true, flag: "ComfyUI environment only"}
+- {name: comfyui-workflow-templates, kind: code, license: MIT, commercial: true, flag: "template definitions only; weights are not included or approved by installing templates"}
+- {name: comfyui-embedded-docs, kind: code, license: GPL-3.0, commercial: true, flag: "ComfyUI environment only"}
+- {name: comfy-aimdo, kind: code, license: GPL-3.0, commercial: true, flag: "ComfyUI environment only"}
+- {name: comfy-kitchen, kind: code, license: Apache-2.0, commercial: true}
+- {name: comfy-angle, kind: code, license: BSD-3-Clause, commercial: true}
+- {name: torchsde, kind: code, license: Apache-2.0, commercial: true}
+- {name: tokenizers, kind: code, license: Apache-2.0, commercial: true}
+- {name: sentencepiece, kind: code, license: Apache-2.0, commercial: true}
+- {name: aiohttp, kind: code, license: "Apache-2.0 AND MIT", commercial: true}
+- {name: yarl, kind: code, license: Apache-2.0, commercial: true}
+- {name: psutil, kind: code, license: BSD-3-Clause, commercial: true}
+- {name: alembic, kind: code, license: MIT, commercial: true}
+- {name: SQLAlchemy, kind: code, license: MIT, commercial: true}
+- {name: filelock, kind: code, license: MIT, commercial: true}
+- {name: simpleeval, kind: code, license: MIT, commercial: true}
+- {name: blake3, kind: code, license: "CC0-1.0 OR Apache-2.0", commercial: true}
+- {name: pydantic-settings, kind: code, license: MIT, commercial: true}
+- {name: PyOpenGL, kind: code, license: BSD, commercial: true}
+- {name: spandrel, kind: code, license: MIT, commercial: true}
+- {name: requests, kind: code, license: Apache-2.0, commercial: true}
+
 # --- Python (.venv) ---
 - {name: fastapi, kind: code, license: MIT, commercial: true}
 - {name: uvicorn, kind: code, license: BSD-3-Clause, commercial: true}

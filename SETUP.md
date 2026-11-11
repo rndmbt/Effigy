@@ -103,6 +103,18 @@ or damaged files; it does not fetch complete weights again. A first Z-Image-Turb
 on an external drive, especially with limited free RAM. "Loading checkpoint shards" is local model loading;
 subsequent image generations reuse the loaded model until the worker is unloaded or the app restarts.
 
+### Optional ComfyUI backend
+
+Select **Set up ComfyUI automatically** in Get started to include it with installation.
+Leave its model path blank to share Effigy's folder, or choose an optional second folder shared
+with other ComfyUI instances. ComfyUI searches both folders but downloads only into the second
+when one is selected. Native Effigy downloads stay in the main folder; no existing files are moved.
+
+This installs ComfyUI and its isolated environment, not model weights. The choice is also available
+in **Setup → ComfyUI backend**. Run `uv run python -m server.comfyui` to launch the installed backend
+with those paths; normal ComfyUI arguments, such as `--port 8191`, can be appended. Existing generation
+features keep their current backend.
+
 ## Step 6: Make your first asset
 
 **From a text description**

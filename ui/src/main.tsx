@@ -1,10 +1,11 @@
 /// <reference types="vite/client" />
 import "./styles.css";
 import { NewTexture, TextureWorkspace } from "./textures/Workspace";
+import { ComfyUISetup } from "./ComfyUI";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { api, fileUrl, waitJob, type Asset, type BlenderSetup, type PortInfo, type TrashEntry, type CopyResult, type Check, type Drive, type Env, type FitQuality, type Folder, type HfStatus, type JobStatus, type Licence, type Meta, type Model, type AgentSetup, type Preset, type Presets, type Storage, type StorageItem } from "./api";
+import { api, fileUrl, waitJob, type ComfyUIState, type Asset, type BlenderSetup, type PortInfo, type TrashEntry, type CopyResult, type Check, type Drive, type Env, type FitQuality, type Folder, type HfStatus, type JobStatus, type Licence, type Meta, type Model, type AgentSetup, type Preset, type Presets, type Storage, type StorageItem } from "./api";
 import { AnimEditor } from "./anim/Editor";
 import { Actions2D, PictureForm, SpritesForm, animatable, tools2D } from "./pixel/Panels";
 import { EditorCanvas, EditorPanel, usePixelEditor } from "./pixel/Editor";
@@ -5901,6 +5902,8 @@ function Welcome(props: {
   const [presets, setPresets] = useState<Preset[] | null>(null);
   const [envs, setEnvs] = useState<Env[]>([]);
   const [folder, setFolder] = useState<Folder | null>(null);
+  const [comfy, setComfy] = useState<ComfyUIState | null>(null);
+  const [starting, setStarting] = useState(false);
   const [pick, setPick] = useState("characters");
   const [hf, setHf] = useState<HfStatus | null>(null);
   const installs = Object.values(props.jobs).filter((j) => j.step?.startsWith("install "));
@@ -5927,11 +5930,24 @@ function Welcome(props: {
   const job = (g: string) => installs.filter((j) => j.step === `install ${g}`).at(-1);
   const todo = (preset?.groups ?? []).filter((g) => !done(g));
   const start = async () => {
-    api.welcomed().catch(() => undefined); // decided: the app stops opening this page by itself
-    for (const g of todo) {
-      const j = job(g);
-      if (j && (j.status === "queued" || j.status === "running")) continue;
-      await props.guard(api.installModels(g).then(({ job_id }) => props.track(job_id, `install ${g}`)));
+    setStarting(true);
+    try {
+      if (comfy) {
+        const backend = await api.setComfyUI({ enabled: comfy.enabled, models: comfy.models });
+        if (comfy.enabled && !backend.installed && !backend.installing) {
+          const { job_id } = await api.installComfyUI();
+          props.track(job_id, "install comfyui");
+        }
+      }
+      await api.welcomed();
+      for (const g of todo) {
+        const j = job(g);
+        if (j && (j.status === "queued" || j.status === "running")) continue;
+        const { job_id } = await api.installModels(g);
+        props.track(job_id, `install ${g}`);
+      }
+    } finally {
+      setStarting(false);
     }
   };
   return (
@@ -5968,6 +5984,7 @@ function Welcome(props: {
         </h2>
         <p className="muted">The model files are big (60 to 140 GB). Choose a drive with room; an SSD loads them faster.</p>
         <ModelsFolder jobs={props.jobs} track={props.track} guard={props.guard} onChange={setFolder} />
+        <ComfyUISetup jobs={props.jobs} track={props.track} guard={props.guard} guided onChange={setComfy} />
       </section>
 
       <section>
@@ -6037,8 +6054,8 @@ function Welcome(props: {
                 A licence in step 4 is not accepted yet: everything else downloads now; once Hugging Face approves it, click Install again for the rest.
               </p>
             )}
-            {todo.length ? (
-              <button className="primary" disabled={busy} onClick={start}>
+            {todo.length || (comfy?.enabled && !comfy.installed) ? (
+              <button className="primary" disabled={busy || starting} onClick={() => props.guard(start())}>
                 {busy ? "Installing…" : `Install ${preset.name} (${size(preset.missing)} to download)`}
               </button>
             ) : (
@@ -6231,6 +6248,7 @@ function Setup(props: {
         </div>
       </div>
       <BlenderStart />
+      <ComfyUISetup jobs={props.jobs} track={props.track} guard={props.guard} />
       <ConnectAgent />
       <AppPort />
       <h2>Credits for your game</h2>

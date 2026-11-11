@@ -4,6 +4,14 @@ What changed for people who use Effigy, newest first. Each release's download an
 [releases page](https://github.com/SifuInTheShell/Effigy/releases); what was built and measured, milestone by
 milestone, is in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) §4.
 
+## Unreleased
+
+### Setup
+
+- Optional local ComfyUI installation with its own Python environment. Share Effigy's model folder
+  or choose a second folder: ComfyUI downloads go there while native downloads stay in the main one.
+  Existing generation backends and model files are unchanged.
+
 ## 0.4.0 (2026-11-06)
 
 ### Texture workspace

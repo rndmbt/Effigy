@@ -23,6 +23,7 @@ from server import (
     agent,
     batch,
     blender_client,
+    comfyui,
     hf,
     install,
     jobs,
@@ -414,6 +415,41 @@ def models_folder():
 @app.post("/api/setup/folder")
 def choose_models_folder(body: Folder):
     return machine.choose_folder(body.path)
+
+
+class ComfyUISetup(BaseModel):
+    enabled: bool
+    models: str = ""
+
+
+@app.get("/api/setup/comfyui")
+def comfyui_setup():
+    return comfyui.setup()
+
+
+@app.post("/api/setup/comfyui")
+def choose_comfyui(body: ComfyUISetup):
+    return comfyui.choose(body.enabled, body.models)
+
+
+@app.post("/api/setup/comfyui/install", status_code=202)
+def install_comfyui():
+    return {"job_id": comfyui.install().id}
+
+
+@app.post("/api/setup/comfyui/start")
+def start_comfyui():
+    return comfyui.start()
+
+
+@app.post("/api/setup/comfyui/stop")
+def stop_comfyui():
+    return comfyui.stop()
+
+
+@app.get("/api/setup/comfyui/status")
+def comfyui_status():
+    return comfyui.request("/system_stats")
 
 
 class Port(BaseModel):

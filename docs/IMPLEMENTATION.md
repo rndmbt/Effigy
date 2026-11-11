@@ -318,6 +318,9 @@ All under `http://127.0.0.1:8000` (the port: Setup, App address, or EFFIGY_PORT;
 | POST | `/api/agent/test` | → `{ok, tools?, error?}` (M40): the bridge started over stdio as the setup says, its tools listed within 30 s |
 | POST | `/api/assets/{id}/blender/open` | `{"version"}` → `{"ok"}`; with Setup's "Start Blender when it is needed" and none answering, the chosen Blender is started with its add-on's server first and waited for (`blender_client.ensure`, up to 90 s, one start at a time; 504 `blender_timeout`) (2026-10-13) |
 | GET | `/api/blender/status` | → `{"link": "pro"\|"free"\|null, "start"}`: which add-on answers; `start` (2026-10-13): Open in Blender starts one when none answers (Setup's option on and its `blender.exe` there) |
+| GET | `/api/setup/comfyui` | → `{enabled, models, download_path, installed, installing}`; empty `models`: share the main folder; otherwise ComfyUI downloads use the second folder |
+| POST | `/api/setup/comfyui` | `{enabled, models?}` → same state; saves the optional installation and model folder choice |
+| POST | `/api/setup/comfyui/install` | → `{job_id}` (202), step `install_comfyui`; install the isolated backend without weights; existing job status/cancel endpoints apply |
 | GET | `/api/setup/blender` | → `{"start", "exe", "found"}` (2026-10-13): start the user's Blender when needed, which one; `found`, while none is chosen: the connected Blender's `bpy.app.binary_path` |
 | POST | `/api/setup/blender` | `{"start", "exe"}` → as GET; 400 `bad_path` when `exe` is not a `blender*` file, or `start` without one; saved in settings.json (`blender_start`, `blender_exe`) |
 | POST | `/api/assets/{id}/blender/pull` | `{"version"?}` → `{"version": "NNN_blender"}` (2026-10-12: with several versions of the asset open, `version` says which; else the one opened last, the note naming what else was open) |
@@ -3909,6 +3912,15 @@ Browser coverage: all 110 cases passed across the final suite and focused retrie
 then the three failed cases rechecked after correcting the texture navigation test).
 Screenshots from the isolated layout tests are in `scratch/ui-preview/screenshots/`; owner acceptance of
 the live app is still pending.
+
+### Optional ComfyUI backend foundation
+
+`server/comfyui_install.py` installs pinned ComfyUI v0.44.0 in ignored `comfyui/` with its own
+Python environment. Get started includes it when selected; launchers ensure enabled installations
+without starting the service. No ComfyUI modules are imported into MIT code and no weights are bundled.
+`server/comfyui.py` supplies configuration and a direct CLI launcher. An optional second model path
+owns ComfyUI downloads/caches; the main folder remains searchable. Native download paths and existing
+models are unchanged. Checks: `tests/test_comfyui.py`, `ui/tests/comfyui.spec.ts`.
 
 ## 5. Bench procedure (reference laptop)
 

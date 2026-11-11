@@ -69,6 +69,10 @@ export type TrashEntry = { name: string; deleted: string; asset_id: string; asse
 export type PortInfo = { running: number; next: number; source: "env" | "settings" | "default"; default: number };
 // Setup's Blender card: Open in Blender starts `exe` when none answers; `found`: the connected Blender's path
 export type BlenderSetup = { start: boolean; exe: string | null; found: string | null };
+export type ComfyUIConfig = { enabled: boolean; models: string };
+export type ComfyUIState = ComfyUIConfig & {
+  installed: boolean; installing: boolean; download_path: string;
+};
 export type Folder = {
   path: string;
   source: "env" | "settings" | "default";
@@ -158,6 +162,9 @@ export const api = {
   installModels: (group: string, repair = false) => call<{ job_id: string }>("POST", "/api/models/install", { group, repair }),
   environments: () => call<Env[]>("GET", "/api/environments"),
   machine: () => call<Check[]>("GET", "/api/setup/machine"),
+  comfyUI: () => call<ComfyUIState>("GET", "/api/setup/comfyui"),
+  setComfyUI: (config: ComfyUIConfig) => call<ComfyUIState>("POST", "/api/setup/comfyui", config),
+  installComfyUI: () => call<{ job_id: string }>("POST", "/api/setup/comfyui/install"),
   folder: () => call<Folder>("GET", "/api/setup/folder"),
   port: () => call<PortInfo>("GET", "/api/setup/port"),
   trash: () => call<TrashEntry[]>("GET", "/api/trash"),
