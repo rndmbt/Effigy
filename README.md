@@ -373,7 +373,8 @@ python tools/package.py                            # the Windows portable zip in
 | `server/` | FastAPI backend: library, jobs, the GPU and RAM safeguards, installs, the Blender link, exports |
 | `steps/` | one module per pipeline step, run as a subprocess; `_*.py` are shared helpers (mesh, bake, views, animation maths) |
 | `engine/` | vendored engines (TRELLIS.2 patches, Pixal3D, GeoSAM2, GEM-X) with their licences and `PATCHES.md` |
-| `blender_ops/` | headless Blender scripts (GPL-3.0-or-later, the only non-MIT code here) |
+| `blender_ops/` | headless Blender scripts (GPL-3.0-or-later, separate process) |
+| `comfy_nodes/` | optional ComfyUI boundary nodes (GPL-3.0-or-later, separate process) |
 | `mcp/` | the MCP server for agents |
 | `ui/` | Vite + React + TypeScript + three.js; `ui/tests/` are the Playwright specs |
 | `tools/` | model downloads and the manifest, the benches, packaging |
@@ -410,6 +411,7 @@ only.
 
 ## Licence
 
-MIT (see [LICENSE](LICENSE)), except `blender_ops/`, which is GPL-3.0-or-later because it runs inside Blender.
+MIT (see [LICENSE](LICENSE)), except `blender_ops/` and `comfy_nodes/`, which are GPL-3.0-or-later
+and run only inside Blender and ComfyUI respectively, in separate processes.
 Models, tools and datasets keep their own licences, listed in [`licenses.yaml`](licenses.yaml); Effigy's own
 code and the assets you make with it are yours.

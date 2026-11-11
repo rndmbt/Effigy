@@ -719,6 +719,33 @@ test("Setup: Connect an agent shows each agent's setup, copies it and tests the 
   expect(errors).toEqual([]);
 });
 
+for (const mode of ["comfy", "native", "missing"] as const) {
+  test(`Generate 3D selects the configured backend: ${mode}`, async ({ page }) => {
+    await page.route("**/api/setup/comfyui", (r) => r.fulfill({ json: {
+      enabled: mode !== "native", installed: true, installing: false, models: "", download_path: "",
+      generation_missing: { faithful: mode === "missing" ? ["diffusion_models/pixal3d_int8_convrot.safetensors"] : [] },
+    } }));
+    await page.route("**/api/models", (r) => r.fulfill({ json: [] }));
+    await fakeCard(page, 14.7, [["faithful-hd", 19.4]]);
+    const posted = await mockAsset(page, "mock_backend", [
+      { version: "010_upload", step: "upload", parent: null, outputs: { image: "image.png" } },
+      { version: "020_prep", step: "prep", parent: "010_upload", outputs: { image: "image.png", image_rgb: "image_rgb.png" } },
+    ]);
+    await page.goto("/#/asset/mock_backend?version=020_prep");
+    const panel = page.locator("#generate");
+    if (mode === "missing") {
+      await expect(panel).toContainText("native backend will not be used instead");
+      await expect(panel.getByRole("button", { name: "Generate 3D" })).toHaveCount(0);
+      await expect(panel.getByRole("link", { name: /Set up/ })).toHaveAttribute("href", /comfy3d/);
+      expect(posted).toEqual([]);
+    } else {
+      await expect(panel).toContainText(mode === "comfy" ? "ComfyUI workflow:" : "native backend");
+      await panel.getByRole("button", { name: "Generate 3D" }).click();
+      await expect.poll(() => posted.find(([s]) => s === "trellis2")?.[1]).toMatchObject({ weights: "faithful" });
+    }
+  });
+}
+
 test("Image flow: cut-out → Faithful → prepare → check → export, without raw JSON", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));

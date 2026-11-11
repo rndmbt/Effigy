@@ -1,6 +1,9 @@
 """Texture detail pass (IMPLEMENTATION.md M43b): zoomed views of the textured mesh redrawn by Z-Image-Turbo +
 Fun-ControlNet Tile 2.1 and painted back into the asset's own UVs (research 14).
 
+Optional `workflow` (op run): a ComfyUI edit workflow replaces Z-Image inference; CPU projection leaves VRAM
+to its model. qwen21_texture also sees the ancestor prep reference. Masked edits retain the built-in model.
+
 Input: any version with a UV-mapped, textured .glb (bake, project, refine). The views are orthographic, unlit
 renders of the base colour, one after another, each drawn from the texture as the earlier views left it; each
 generated view is colour-matched to its render at low frequency and back-projected (cos × z-test × eroded
@@ -430,6 +433,62 @@ def paint(acc, wsum, wmax, wt, col, orig):
     return orig * (1 - wmax[:, None]) + blend * wmax[:, None]
 
 
+class _comfy_generator:
+    """Redraw rendered views through an edit workflow; projection stays on the CPU so the model owns VRAM."""
+
+    def __init__(self, workflow: str, src: Path):
+        from steps import _comfy
+
+        self.workflow = workflow
+        self.reference = None
+        here = src
+        while (here / "meta.json").is_file():
+            meta = json.loads((here / "meta.json").read_text(encoding="utf-8"))
+            if meta.get("step") == "prep" and meta.get("outputs", {}).get("image"):
+                image = Image.open(here / meta["outputs"]["image"]).convert("RGBA")
+                self.reference = Image.new("RGB", image.size, (128, 128, 128))
+                self.reference.paste(image, mask=image.getchannel("A"))
+                break
+            parent = meta.get("parent")
+            if not parent or Path(parent).name != parent:
+                break
+            here = src.parent / parent
+        if "reference" in _comfy.manifest(workflow, "edit")["set"] and self.reference is None:
+            raise StepError(
+                "missing_input",
+                "This workflow needs an original prep reference up the version chain",
+            )
+        self.provenance = _comfy.provenance(_comfy.manifest(workflow, "edit"))
+        self.models = self.provenance["models"]
+
+    def encode(self, prompts: list[str]) -> dict:
+        return {p: p for p in prompts}
+
+    def __call__(self, ctrl, prompt, strength, scale, seed):
+        from steps import _comfy
+
+        instruction = (
+            "Improve the surface texture detail of this rendered object. "
+            "Preserve exactly the silhouette, camera, pose, placement and material colours. "
+            "Use flat even lighting, no shadows or specular highlights. "
+            "Image 1 is the rendered view: keep its camera and silhouette exactly. "
+            "Image 2, when supplied, shows the original design: use its materials, not its camera. "
+            + prompt
+        )
+        images, _ = _comfy.generate(
+            self.workflow,
+            "edit",
+            instruction,
+            [seed],
+            image=Image.fromarray(ctrl),
+            reference=self.reference,
+        )
+        image = np.asarray(
+            images[0].convert("RGB").resize((ctrl.shape[1], ctrl.shape[0]), Image.LANCZOS)
+        )
+        return (ctrl * (1 - strength) + image * strength).round().clip(0, 255).astype(np.uint8)
+
+
 def _encode(torch, pipe, prompts: list[str], then) -> dict:
     """The prompts' embeddings with the text encoder alone on the card, one at a time (its peak stays that of one
     prompt); then the models in `then` go on the card."""
@@ -677,7 +736,11 @@ def run(op, in_dir, out_dir, params):
         base = base.resize((4096, 4096), Image.LANCZOS)
     base = np.asarray(base).copy()
     size = base.shape[0]
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = (
+        "cuda"
+        if torch.cuda.is_available() and not params.get("workflow") and not params.get("_estimator")
+        else "cpu"
+    )
     v_np = np.asarray(mesh.vertices, float)
     faces_np = np.asarray(mesh.faces)
     uv_np = np.asarray(mesh.visual.uv, float).copy()
@@ -725,7 +788,16 @@ def run(op, in_dir, out_dir, params):
         )  # a user's window (Redraw this view) names no part; the auto views do
 
     gen, tile = None, None
-    if views and region is not None:
+    if views and params.get("_estimator") is not None:
+        gen = params["_estimator"]
+    elif views and params.get("workflow"):
+        if region is not None:
+            raise StepError(
+                "bad_params",
+                "workflow redraw is for whole views; masked editing uses the built-in model",
+            )
+        gen = _comfy_generator(params["workflow"], src)
+    elif views and region is not None:
         progress(0.02, f"loading the inpaint model ({len(views)} views see the painted part)")
         gen = _inpainter()
     elif views:
@@ -770,7 +842,7 @@ def run(op, in_dir, out_dir, params):
         .astype(float)
     )
     fmask = (
-        None if region is not None else face_mask(src, size)
+        None if region is not None or params.get("_estimator") is not None else face_mask(src, size)
     )  # an edit's paint decides, a face too
     keep = torch.ones(len(pts), device=dev)
     if fmask is not None:
@@ -795,6 +867,17 @@ def run(op, in_dir, out_dir, params):
         cur[..., :3] = delight(cur[..., :3], ao, covered, p["delight"])
     # drift, detail and the views' "before": what the views started from
     base_lit = cur.round().clamp(0, 255).to(torch.uint8).cpu().numpy()
+    source_colour = cur[..., :3].clone() if params.get("_estimator") is not None else None
+    if params.get("_material_role") in ("roughness", "metallic"):
+        fallback = params.get("_fallback")
+        if fallback is None:
+            value = 204 if params["_material_role"] == "roughness" else 0
+            cur[..., :3] = value
+        else:
+            fallback = fallback.convert("RGB").resize((size, size), Image.BILINEAR)
+            cur[..., :3] = torch.tensor(
+                np.asarray(fallback).copy(), dtype=torch.float32, device=dev
+            )
     orig = cur[covered][:, :3].clone()
     n_t = len(orig)
     acc, wsum, wmax = (
@@ -810,7 +893,12 @@ def run(op, in_dir, out_dir, params):
         progress(0.2 + 0.7 * i / len(views), f"view {i + 1}/{len(views)}")
         cam = ortho(w["yaw"], w["pitch"], w["center"], w["extent"])
         rgb, a, extra, (_, _, zbuf, _, depth_v) = render(
-            torch.cat([cur[..., :3], face_t], -1), uv, f, v_np, cam, VIEW
+            torch.cat([source_colour if source_colour is not None else cur[..., :3], face_t], -1),
+            uv,
+            f,
+            v_np,
+            cam,
+            VIEW,
         )
         if float(a.mean()) < 0.005:  # this window sees no surface
             continue
@@ -842,7 +930,11 @@ def run(op, in_dir, out_dir, params):
                 p["seed"] + i,
             )
             g = torch.tensor(g, dtype=torch.float32, device=dev) / 255
-            matched = colour_match(rgb, a, g, sigma)
+            matched = (
+                g.permute(2, 0, 1)[None]
+                if params.get("_estimator") is not None
+                else colour_match(rgb, a, g, sigma)
+            )
         wt, grid = texel_weights(cam, a, zbuf, depth_v, pts, v_np, faces_np, corners, w3)
         wt = (
             wt * keep
@@ -946,7 +1038,7 @@ def run(op, in_dir, out_dir, params):
     }
     outputs = write_textured(out, mesh, mat, rgba, {"views": "views.png"} if thumbs else {})
     models = getattr(gen, "models", [])
-    return {
+    return getattr(gen, "provenance", {}) | {
         "outputs": outputs,
         "metrics": metrics,
         "models": models,

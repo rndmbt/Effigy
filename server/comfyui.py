@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -13,8 +14,9 @@ from types import SimpleNamespace
 
 import yaml
 
-from server import jobs, settings
+from server import jobs, presets, settings
 from server.library import ApiError
+from tools.download_models import PINNED
 
 ROOT = Path(__file__).resolve().parents[1]
 HOME = ROOT / "comfyui"
@@ -52,7 +54,7 @@ def python() -> Path:
 
 def model_root() -> Path:
     """A second folder, when selected, receives ComfyUI's models instead of Effigy's root."""
-    return Path(settings.read().get("comfyui_models") or settings.models_root()).resolve()
+    return settings.comfyui_models().resolve()
 
 
 def installed() -> bool:
@@ -82,6 +84,23 @@ def setup() -> dict:
         "download_path": str(model_root()),
         "installed": installed(),
         "installing": installing(),
+        "generation_missing": generation_missing(),
+    }
+
+
+def generation_missing() -> dict[str, list[str]]:
+    """The checkpoints Generate 3D lacks per generator (its Setup group's pinned files), in either model root."""
+    roots = {model_root(), settings.models_root().resolve()}
+    groups = {"fast": "comfy3d-fast", "faithful": "comfy3d", "faithful_mv": "comfy3d-mv"}
+    return {
+        key: [
+            f
+            for pinned, *_, filters in PINNED
+            if group in pinned.split()
+            for f in filters["allow_patterns"]
+            if not any((r / f).is_file() for r in roots)
+        ]
+        for key, group in groups.items()
     }
 
 
@@ -101,6 +120,9 @@ def choose(enabled: bool, models: str) -> dict:
 def prepare() -> None:
     """The selected root owns downloads; extra model paths are lookup-only."""
     (HOME / "data/custom_nodes").mkdir(parents=True, exist_ok=True)  # ComfyUI lists it at start
+    shutil.copytree(
+        ROOT / "comfy_nodes/effigy_3d", HOME / "data/custom_nodes/effigy_3d", dirs_exist_ok=True
+    )
     model_root().mkdir(parents=True, exist_ok=True)
     paths = {k: k + "/" for k in MODEL_FOLDERS}
     paths.update(text_encoders="text_encoders/\nclip/", diffusion_models="diffusion_models/\nunet/")
@@ -182,11 +204,14 @@ def start(timeout: float = 180) -> dict:
             s.bind(("127.0.0.1", 0))
             _port = s.getsockname()[1]
         log = open(HOME / "comfyui.log", "w", encoding="utf-8")  # noqa: SIM115 - the child's
+        env = environment()
+        if gpu := jobs._smi("memory.total", "memory.free"):
+            env["EFFIGY_COMFYUI_VRAM_GB"] = str(presets.budget_gb(gpu[0] / 1024, gpu[1] / 1024))
         _proc = subprocess.Popen(
             # a GB kept free on the card, other programs' share counted: a model that fits must never push
             # Windows into shared memory (steps/_comfy reports it if it happens)
             [*command(), "--port", str(_port), "--vram-headroom", "1"],
-            env=environment(),
+            env=env,
             cwd=HOME / "source",
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -285,7 +310,10 @@ def workflows() -> list[dict]:
         }
         missing = sorted(f for f in files if not any(any(r.glob(f"*/{f}")) for r in roots))
         keys = ("title", "kind", "about", "restricted", "own", "models")
-        out.append({"id": name, "missing": missing} | {k: m.get(k) for k in keys})
+        out.append(
+            {"id": name, "missing": missing, "reference": "reference" in m["set"]}
+            | {k: m.get(k) for k in keys}
+        )
     return out
 
 

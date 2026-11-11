@@ -1,0 +1,14 @@
+title: "Qwen-Image 2.1 \u2014 texture with reference"
+kind: edit
+about: Texture redraw guided by the original concept. Preserves the rendered camera
+  and silhouette.
+rank: 11
+set:
+  prompt: 5.prompt
+  seed: 10.noise_seed
+  image: 20.image
+  reference: 21.image
+models:
+- name: Qwen/Qwen-Image-2.1
+  license: Qwen research licence, non-commercial
+  commercial: false

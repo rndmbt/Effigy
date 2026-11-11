@@ -48,6 +48,7 @@ export type TextureMaterial = {
 export type TextureInventory = { model: boolean; mesh?: string; materials: TextureMaterial[]; rigged?: boolean; animated?: boolean; manifest?: Record<string, any> };
 /** A ComfyUI workflow offered as a model (steps/_comfy.py): `missing` the model files its graph names and the folders lack. */
 export type Workflow = {
+  reference?: boolean;
   id: string;
   title: string;
   kind: "image" | "edit";
@@ -82,6 +83,7 @@ export type PortInfo = { running: number; next: number; source: "env" | "setting
 export type BlenderSetup = { start: boolean; exe: string | null; found: string | null };
 export type ComfyUIConfig = { enabled: boolean; models: string };
 export type ComfyUIState = ComfyUIConfig & {
+  generation_missing?: Record<string, string[]>;
   installed: boolean; installing: boolean; download_path: string;
 };
 export type Folder = {

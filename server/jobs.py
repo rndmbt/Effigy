@@ -198,6 +198,7 @@ def _env(budget: float | None = None) -> dict:
             "EFFIGY_BLENDER": str(blender_install.blender_exe()),
             "EFFIGY_GLTFPACK": str(gltfpack_install.gltfpack_exe()),
             "EFFIGY_UVGAMI": str(uvgami_install.HOME),
+            "EFFIGY_PBR_CACHE": str(settings.pbr_cache()),
         }
         | _pin_gpu()
         | _comfy_env()
@@ -215,7 +216,17 @@ def _comfy_env() -> dict:
 
 def _workflow(job: "Job") -> str | None:
     """The ComfyUI workflow `job` draws with, if any: ComfyUI then holds the GPU instead of a resident worker."""
-    return (job.params.get("workflow") or None) if job.step in ("concepts", "edit") else None
+    if (
+        job.step == "trellis2"
+        and job.params.get("backend") == "comfyui"
+        and job.params.get("op", "generate") in ("run", "generate")
+    ):
+        return "generate3d"
+    return (
+        (job.params.get("workflow") or None)
+        if job.step in ("concepts", "edit", "refine", "textures")
+        else None
+    )
 
 
 def _pin_gpu() -> dict:
@@ -452,6 +463,10 @@ def submit(
                 f"{step} has no preset {name!r}: {sorted(presets.PRESETS.get(step, {}))}",
             )
         params = presets.PRESETS[step][name] | {k: v for k, v in params.items() if k != "preset"}
+    if step == "trellis2" and params.get("op", "generate") in ("run", "generate"):
+        params = params | {
+            "backend": "comfyui" if settings.read().get("comfyui_enabled") else "native"
+        }
     with _submitting:
         if dedupe:
             for j in list(JOBS.values()):

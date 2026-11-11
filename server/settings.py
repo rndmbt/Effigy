@@ -75,3 +75,14 @@ def models_source() -> str:
         if read().get("models")
         else "default"
     )
+
+
+def comfyui_models() -> Path:
+    """Where ComfyUI's own models are kept: the second folder when one is selected, else the main one."""
+    return Path(read().get("comfyui_models") or models_root())
+
+
+def pbr_cache() -> Path:
+    """The learned-material cache shares the selected external model store, or the native store's hub."""
+    selected = read().get("comfyui_models")
+    return Path(selected) / "huggingface" if selected else models_root() / "hub"

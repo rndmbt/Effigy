@@ -50,7 +50,7 @@ def _uvgami(src: Path, out: Path, p: dict):
         )
     os.environ.update(BLENDER_USER_RESOURCES=str(profile), UVGAMI_ENGINE_DIR=str(engine))
     progress(0.2, "UVgami (OptCuts) unwrapping")
-    keys = {k: p[k] for k in ("priority", "symmetry", "timeout") if k in p}
+    keys = {k: p[k] for k in ("priority", "symmetry", "timeout", "proxy_faces") if k in p}
     try:
         run_blender(
             "uvgami", [src], out / "_uvg", keys, timeout=float(p.get("timeout", 1800)) + 120

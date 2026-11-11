@@ -131,6 +131,12 @@ app's default): `faithful-hd` (1536, 4K) on a 24 GB card, `faithful-hq` (20 step
 (`refine`) takes the full Tile by itself where it is installed and fits; `{"tile": "lite"}` forces the light
 one. Without `op` it generates; retexture an existing mesh
 with `{"op": "texture"}`.
+When ComfyUI is enabled in Setup, the same generation call uses the ComfyUI workflow automatically;
+unchecked means native. A missing selected backend fails explicitly. The workflow includes camera estimation,
+solid high-poly reconstruction, UVgami and PBR/normal-detail baking. The version keeps raw materials and
+both raw and repaired normal-source geometry for Prepare. Do not infer visual quality from watertightness:
+inspect the generated model. The camera is estimated; `camera_auto: false` uses `fov` instead; `repair_resolution`, `repair_fill`,
+`repair_smooth` and `uv_timeout` tune the ComfyUI finish. Restricted ancestors remain restricted.
 
 **Game-ready preparation, in order**, each on the previous version:
 `clean` (`{"height_m": 1.8}` rescales; repairs holes and non-manifold edges; a prop generated from a
@@ -223,6 +229,21 @@ owner remove it). The result lists the absolute paths. Export the **checked** ve
 (a non-commercial model, a Hunyuan experiment, a file without a clean licence) is refused unless `options` has
 `"allow_restricted": true`: ask the owner first, the export is then for non-commercial use and says so in its
 `CREDITS.txt`.
+
+## Learned PBR and texture redraw models
+
+After `uv` (UVgami is the default) and `bake`, use `textures` op `pbr` to estimate unlit albedo, roughness and
+metallic. Install the `pbr` model group in Setup first. On a model this renders eight directional views and
+projects predictions into the existing UVs; on a standalone colour texture it runs directly. Existing normals,
+AO, geometry, UVs, skeleton and animation are retained. `metrics.projection` reports the visible surface share;
+unseen texels keep their previous values. The output is an estimate: inspect metallic especially on skin,
+fur and stylised art, which the model can mistake for reflective material.
+
+For texture correction, `refine` op `run` accepts `workflow`, as does `textures` op `enhance` on models.
+Omit it to keep Z-Image + Tile. `qwen21_texture` uses the ancestor `prep` image as a second reference;
+ordinary edit workflows use the rendered view alone. A workflow redraw uses CPU rendering/projection so
+its inference model owns the GPU. `views`, `strength` and the existing coverage controls still apply;
+masked op `edit` remains the built-in inpaint path. Workflow licences propagate to all descendants.
 
 ## Do not
 

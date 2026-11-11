@@ -671,3 +671,24 @@ test("Textures: import map set and apply a pinned Library version to an animated
     page.getByRole("button", { name: /^Base colour 64/ }),
   ).toBeVisible();
 });
+
+
+test("Learned PBR is offered in Enhance and submits the learned operation, not brightness maps", async ({ page }) => {
+  await page.route("**/api/models", (r) => r.fulfill({ json: [] }));
+  await page.goto("/#/new");
+  await page.getByRole("button", { name: "Texture / Material", exact: true }).click();
+  await page.getByRole("button", { name: "Start with a colour" }).click();
+  await page.getByLabel("Material name").fill("Learned PBR control test");
+  await page.getByLabel("Starting width").selectOption("256");
+  await page.getByRole("button", { name: "Create texture", exact: true }).click();
+  await expect(page.locator(".texture-workspace")).toBeVisible({timeout: 40000});
+  await page.getByRole("tab", { name: "Enhance", exact: true }).click();
+  await expect(page.getByRole("heading", {name: "Learned PBR materials"})).toBeVisible();
+  let submitted: any;
+  await page.route("**/api/assets/*/steps/textures", async (route) => {
+    submitted = route.request().postDataJSON().params;
+    await route.fulfill({status: 400, json: {code: "not_run", message: "Neural inference deliberately not run in this UI test"}});
+  });
+  await page.getByRole("button", {name: "Estimate PBR materials", exact: true}).click();
+  await expect.poll(() => submitted?.op).toBe("pbr");
+});

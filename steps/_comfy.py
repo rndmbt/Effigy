@@ -31,6 +31,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 
@@ -143,7 +144,8 @@ def _call(path: str, body: dict | None = None, raw: bool = False):
 
 def _upload(image: Image.Image) -> str:
     """The picture into ComfyUI's input folder; the name a LoadImage takes."""
-    buf, mark, name = BytesIO(), uuid.uuid4().hex, "effigy_input.png"
+    buf, mark = BytesIO(), uuid.uuid4().hex
+    name = f"effigy_{mark}.png"
     image.save(buf, "PNG")
     body = (
         (
@@ -175,8 +177,8 @@ def _refused(reply: dict) -> str:
     return f"ComfyUI: {head}. " + "; ".join(lines)[:1500]
 
 
-def _queue(graph: dict) -> list[Image.Image]:
-    """Run one graph to its end; the images of its output nodes."""
+def execute(graph: dict) -> dict:
+    """Run a graph to its end; return its output records (images or geometry files)."""
     reply = _call("/prompt", {"prompt": graph, "client_id": "effigy"})
     if not (pid := reply.get("prompt_id")):
         raise StepError("failed", _refused(reply))
@@ -189,8 +191,13 @@ def _queue(graph: dict) -> list[Image.Image]:
         kind = errors[0].get("exception_type", "") if errors else ""
         oom = "OutOfMemory" in kind or "out of memory" in text.lower()
         raise StepError("oom" if oom else "failed", f"ComfyUI: {kind} {text}".strip()[:1500])
+    return done.get("outputs", {})
+
+
+def _queue(graph: dict) -> list[Image.Image]:
+    """Run one image graph; fetch its output pictures."""
     images = []
-    for node in done.get("outputs", {}).values():
+    for node in execute(graph).values():
         for im in node.get("images", []):
             raw = _call("/view?" + urllib.parse.urlencode(im), raw=True)
             images.append(Image.open(BytesIO(raw)).copy())
@@ -224,6 +231,25 @@ def _shared_gb() -> float | None:
         return None
 
 
+@contextmanager
+def spill_watch():
+    """Watch shared video memory while the block runs; yields a function giving the GB the block has added
+    (None where it cannot be read)."""
+    before, peak, stop = _shared_gb(), [0.0], threading.Event()
+
+    def watch():
+        while not stop.wait(2):
+            if (now := _shared_gb()) is not None:
+                peak[0] = max(peak[0], now)
+
+    if before is not None:
+        threading.Thread(target=watch, daemon=True).start()
+    try:
+        yield lambda: None if before is None else round(max(0.0, peak[0] - before), 2)
+    finally:
+        stop.set()
+
+
 def generate(
     name: str,
     kind: str,
@@ -234,6 +260,7 @@ def generate(
     image: Image.Image | None = None,
     p0: float = 0.05,
     p1: float = 0.9,
+    reference: Image.Image | None = None,
 ) -> tuple[list[Image.Image], dict]:
     """One picture per seed (and per prompt, when a list) from workflow `name` (the first image each run saves), and its RESULT fields
     (`provenance` + metrics `shared_gb`: the most shared video memory the runs added)."""
@@ -243,19 +270,12 @@ def generate(
     values = {"width": width, "height": height}
     if image is not None:
         values["image"] = _upload(image)
+    if reference is not None and "reference" in m["set"]:
+        values["reference"] = _upload(reference)
     if missing := [k for k in ["prompt", "image"][: 1 + (kind == "edit")] if k not in m["set"]]:
         raise StepError("bad_params", f"workflow {name}: its `set` needs {missing}")
-    before, peak, stop = _shared_gb(), [0.0], threading.Event()
-
-    def watch():
-        while not stop.wait(2):
-            if (now := _shared_gb()) is not None:
-                peak[0] = max(peak[0], now)
-
-    if before is not None:
-        threading.Thread(target=watch, daemon=True).start()
     out = []
-    try:
+    with spill_watch() as added:
         for k, seed in enumerate(seeds):
             progress(p0 + (p1 - p0) * k / len(seeds), f"{m['title']}: picture {k + 1}/{len(seeds)}")
             for key, value in (values | {"seed": seed, "prompt": prompts[k]}).items():
@@ -269,10 +289,8 @@ def generate(
                     if value is not None:
                         graph[node]["inputs"][field] = value
             out.append(_queue(graph)[0])
-    finally:
-        stop.set()
     result = provenance(m)
-    spill = round(max(0.0, peak[0] - before), 2) if before is not None else None
+    spill = added()
     result["metrics"] = {"workflow": name, "shared_gb": spill}
     if spill is not None and spill > SPILL_GB:
         result["note"] = (

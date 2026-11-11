@@ -20,6 +20,7 @@ op=edit: prompt, region=uploaded frozen mask version, mask_source=original model
   Mesh/UV identity must match mask_source. Existing refine view/coverage/zoom/tile options are accepted.
 op=project: image=reference version (optional), region=head|front, strength, match; compatible model face projection.
 op=retexture: image=prepared same-asset reference version (image_rgb.png), size, seed; model colour/rough/metal.
+op=pbr: learned albedo, roughness and metallic (Marigold IID Appearance); existing normals and AO retained.
 op=surface: strength, roughness, metallic; estimate missing maps from image brightness, not physical recovery.
 op=seamless: role=basecolor|emissive; deterministic edge blend for standalone maps.
 op=apply|extract: source_asset, source_version, source_material=0; pinned copies with source credits/restrictions.
@@ -58,6 +59,7 @@ OPS = {
     "apply",
     "extract",
     "surface",
+    "pbr",
     "create",
     "seamless",
 }
@@ -405,6 +407,29 @@ def run(op, in_dir, out_dir, params):
                 gc.collect()
             models, licenses = [{"id": _sr.MODEL}], [_sr.MODEL]
         changed.add(role)
+    elif op == "pbr":
+        from steps import _pbr
+
+        if "basecolor" not in maps:
+            raise StepError("missing_input", "Learned PBR needs a base-colour image")
+        if mesh and not tx.inventory(src)["materials"][material]["can_generate"]:
+            raise StepError(
+                "bad_params", "Learned PBR currently requires one UV-mapped mesh and one material"
+            )
+        generated, report = _pbr.estimate(src, out, maps, bool(mesh), params)
+        # Preserve transparency from the original colour and leave AO/normal/height untouched.
+        if "A" in maps["basecolor"].getbands():
+            image = generated["basecolor"].convert("RGBA")
+            image.putalpha(maps["basecolor"].getchannel("A").resize(image.size, Image.BILINEAR))
+            generated["basecolor"] = image
+        maps.update(generated)
+        changed.update(generated)
+        values.update(roughnessFactor=1, metallicFactor=1)
+        manifest["surface_method"] = (
+            "Learned Marigold IID Appearance estimates: albedo, linear roughness and metallic"
+        )
+        operation_metrics.update(report)
+        models, licenses = [{"id": _pbr.MODEL, "revision": _pbr.REVISION}], [_pbr.MODEL]
     elif op == "surface":
         if "basecolor" not in maps:
             raise StepError(
@@ -504,6 +529,7 @@ def run(op, in_dir, out_dir, params):
                             "scale",
                             "delight",
                             "texture_size",
+                            "workflow",
                         )
                     }
                     refine_params = {
@@ -585,6 +611,7 @@ def run(op, in_dir, out_dir, params):
                 changed.add("basecolor")
             models, licenses = result.get("models", []), result.get("licenses", [])
             operation_metrics = result.get("metrics", {})
+            restricted |= bool(result.get("restricted"))
             if mesh and params.get("image"):
                 reference = tx.metadata(
                     version(src.parent.parent, src.parent.name, params["image"])

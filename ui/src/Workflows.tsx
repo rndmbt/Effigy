@@ -32,15 +32,15 @@ function useStored<T>(key: string, start: T): [T, (v: T) => void] {
 
 /** [the chosen workflow's id ("" = the built-in model), its picker]: the picker is null when there is nothing to choose
  * (no ComfyUI, or no workflow of this kind), so a page without ComfyUI looks as it did. */
-export function useModel(kind: "image" | "edit", allow = true): [string, ReactNode] {
+export function useModel(kind: "image" | "edit", allow = true, builtIn = false): [string, ReactNode] {
   const [all, setAll] = useState<Workflow[]>([]);
   useEffect(() => {
     (asked ??= api.workflows().catch(() => [])).then(setAll);
   }, []);
   const [saved, save] = useStored(`effigy.model.${kind}`, "");
-  const list = all.filter((w) => w.kind === kind);
+  const list = all.filter((w) => w.kind === kind && (builtIn || !w.reference));
   const usable = list.filter((w) => !w.missing.length);
-  const id = !allow ? "" : usable.some((w) => w.id === saved) ? saved : kind === "edit" ? (usable[0]?.id ?? "") : "";
+  const id = !allow ? "" : usable.some((w) => w.id === saved) ? saved : kind === "edit" && !builtIn ? (usable[0]?.id ?? "") : "";
   const w = list.find((x) => x.id === id);
   const lacking = list.filter((x) => x.missing.length);
   if (!list.length) return ["", null];
@@ -49,7 +49,7 @@ export function useModel(kind: "image" | "edit", allow = true): [string, ReactNo
       <label>
         {kind === "edit" ? "Edit model" : "Image model"}
         <select value={id} disabled={!allow} onChange={(e) => save(e.target.value)}>
-          {kind === "image" && <option value="">Z-Image Turbo (built in)</option>}
+          {(kind === "image" || builtIn) && <option value="">{builtIn ? "Z-Image + Tile (built in)" : "Z-Image Turbo (built in)"}</option>}
           {list.map((x) => (
             <option key={x.id} value={x.id} disabled={!!x.missing.length}>
               {x.title}

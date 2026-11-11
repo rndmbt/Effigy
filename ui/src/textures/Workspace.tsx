@@ -8,6 +8,7 @@ import {
   type TextureRole,
 } from "../api";
 import { leave, useBusy } from "../hooks";
+import { useModel } from "../Workflows";
 import { mainFile } from "../workflow";
 import { MaterialPreview, ModelPreview, MapPreview, mapUrl } from "./Preview";
 import { Painter } from "./Painter";
@@ -444,6 +445,7 @@ export function TextureWorkspace(props: {
     [hue, setHue] = useState(0),
     [roughness, setRoughness] = useState(0.8),
     [metallic, setMetallic] = useState(0);
+  const [detailWorkflow, detailModelPick] = useModel("edit", !!info?.model, true);
   const [alphaMode, setAlphaMode] = useState("OPAQUE"),
     [normalConvention, setNormalConvention] = useState("OpenGL"),
     [assets, setAssets] = useState<Asset[]>([]),
@@ -1136,6 +1138,13 @@ export function TextureWorkspace(props: {
             {tab === "enhance" && (
               <div className="stack">
                 <h2>Enhance material details</h2>
+                <section className="stack">
+                  <h3>Learned PBR materials</h3>
+                  <p className="muted">Estimate unlit albedo, roughness and metallic from the current colours with Marigold. Models are processed from rendered views, not from unrelated UV islands. Existing normals and AO stay unchanged. Estimates may be wrong for stylised art; the original version stays available.</p>
+                  <button disabled={cannotWork || !material.maps.basecolor || (info.model && !material.can_generate) || props.missing("pbr")} onClick={() => operate("pbr", {})}>Estimate PBR materials</button>
+                  {props.missing("pbr") && <a href="#/setup?cap=pbr">Set up learned PBR materials</a>}
+                </section>
+                {info.model && detailModelPick}
                 {info.model && !material.can_generate && !material.reason && (
                   <p className="note warn">
                     AI model editing currently requires one mesh and one
@@ -1164,10 +1173,10 @@ export function TextureWorkspace(props: {
                     !prompt.trim() ||
                     !material.maps.basecolor ||
                     (info.model && !material.can_generate) ||
-                    props.missing("refine")
+                    (props.missing("refine") && !detailWorkflow)
                   }
                   onClick={() =>
-                    operate("enhance", { prompt, strength, size, tileable })
+                    operate("enhance", { prompt, strength, size, tileable, ...(info.model && detailWorkflow ? {workflow: detailWorkflow} : {}) })
                   }
                 >
                   Enhance colour details
@@ -1236,6 +1245,7 @@ export function TextureWorkspace(props: {
                 >
                   Generate new texture{info.model ? " set" : ""}
                 </button>
+
                 <details>
                   <summary>Estimate surface maps</summary>
                   <div className="stack">

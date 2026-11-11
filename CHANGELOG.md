@@ -6,6 +6,39 @@ milestone, is in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) §4.
 
 ## Unreleased
 
+### Generate 3D
+
+- When the optional ComfyUI backend is enabled, Generate 3D uses a local workflow with camera estimation,
+  separate shape/material sampling, solid high-poly reconstruction, UVgami unwrap and PBR/normal-detail baking.
+  Uncheck ComfyUI in Setup to keep the original native generator. Missing backend files are reported, not
+  silently replaced by the native path.
+- The raw material volume and raw mesh are preserved alongside the repaired high-poly normal source, so
+  Prepare can bake materials from the original surface and normals from the repaired one. Geometry and UV
+  reports accompany generation. Repair may close intentional openings or soften detail; inspect the result.
+- Setup provides the converted ComfyUI 3D checkpoints as separate optional downloads in its selected model folder.
+
+### Materials and texture detail
+
+- **Learned PBR materials** in Textures → Enhance estimates unlit albedo, linear roughness and metallic
+  with Marigold IID Appearance. Models are processed from rendered views and projected back into their UVs;
+  standalone colour images are processed directly. Existing geometry, UVs, rigs, animations, AO and normals
+  stay intact. These are predictions, not measured material properties, and may misclassify stylised surfaces.
+- **Image-model choice for Texture detail and Enhance.** Use the built-in Z-Image + Tile, or a local ComfyUI
+  edit workflow. The Qwen texture workflow also sees the original prepared concept as its second reference.
+  CPU view rendering/projection leaves the GPU exclusively to the inference model. Masked edits still use
+  the built-in inpaint model.
+- **Automatic generation backgrounds are grey** for both Fast and Faithful. Black and white remain explicit
+  choices. Existing generated meshes are not changed.
+- Setup includes the pinned Learned PBR model download; it shares the selected ComfyUI model store when one
+  is configured. No weights are downloaded during estimation.
+
+### For agents
+
+- `textures` op `pbr` estimates albedo, roughness and metallic; leaves AO and tangent normals unchanged.
+- `refine` op `run`, and `textures` op `enhance` on models, accept `workflow` (an edit workflow id).
+  `qwen21_texture` needs an original `prep` version up the chain; its second image is that concept.
+
+
 ### UVs
 
 - UVgami (OptCuts) is now the default UV unwrapper, producing fewer islands and shorter seams. CuMesh remains available with `unwrapper: "cumesh"`.

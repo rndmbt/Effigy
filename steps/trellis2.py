@@ -2,11 +2,12 @@
 
 op "generate" on a `prep` version → hi.glb, ovoxel.npz, hi_trellis.ply, preview.png. params: {weights: fast
 (TRELLIS.2-4B) | faithful (Pixal3D), pipeline_type, steps, seed, texture_size, faces, height_m, fov (faithful:
-camera field of view, radians), background: auto | black | grey | white}. The models see the cut-out on a flat
+camera field of view, radians), background: auto | black | grey | white}. backend "comfyui" (steps/_comfy3d.py)
+estimates the camera unless camera_auto is false. The models see the cut-out on a flat
 background, black in their own preprocessing: a black cat's back then reads as background and comes out as
 a hole. Measured on a black-and-white cat, same seed: Fast on black lost the whole black body (1.0 m² of
 surface), on grey it was whole (2.3 m²); Faithful (it projects its voxels into the picture) was whole on
-both. `auto`: grey for Fast on a dark subject (over 15 % near-black), black otherwise, as before.
+both. `auto`: grey for both generators; explicit black and white remain available.
 op "texture" on any version with a UV-mapped .glb → the same mesh and UVs with a new PBR set. params: {image:
 a prep version of this asset (default: the one up the chain), resolution: 1024|512, steps, seed, texture_size}.
 One-shot or resident (`--serve`): the loaded pipeline stays in PIPES between requests. The GPU-only pieces are
@@ -35,7 +36,7 @@ from steps._common import (
     save_ovoxel,
     trellis_to_library,
 )
-from steps._image import BACKGROUNDS, DARK_SHARE, dark_share, on_background
+from steps._image import BACKGROUNDS, dark_share, on_background
 from steps._mesh import drop_small_parts, face_outward, fill_holes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -232,20 +233,23 @@ def _params(params: dict) -> dict:
     p = (
         {
             "weights": "fast",
+            "backend": "native",
             "pipeline_type": "1024_cascade",
             "steps": 12,
             "seed": random.randrange(2**31),
             "texture_size": 2048,
             "faces": 200_000,
             "height_m": 1.0,
-            "fov": 0.2,  # Pixal3D's suggestion for product-style shots; MoGe-2 estimation is a later option
+            "fov": 0.2,  # Pixal3D's suggestion for product-style shots
+            "camera_auto": True,  # backend comfyui: MoGe-2 estimates the camera; false uses `fov`
             "multiview": True,  # faithful + a prep "views" version (cameras.json): all views, else the front
-            "background": "auto",  # behind the cut-out: auto (grey for a dark subject) | black | grey | white
+            "background": "auto",  # behind the cut-out: auto (grey) | black | grey | white
         }
         | params
     )
     ok = (
         p["weights"] in WEIGHTS
+        and p["backend"] in ("native", "comfyui")
         and p["pipeline_type"] in WEIGHTS[p["weights"]]["pipeline_types"]
         and 1 <= int(p["steps"]) <= 50
         and p["texture_size"] in (256, 512, 1024, 2048, 4096)
@@ -288,7 +292,7 @@ def _framed(src: Path, background: str, weights: str = "fast"):
     rgba = np.asarray(Image.open(rgba_file).convert("RGBA"))
     dark = dark_share(rgba)
     if background == "auto":
-        background = "grey" if weights == "fast" and dark > DARK_SHARE else "black"
+        background = "grey"
     rgb = on_background(rgba, BACKGROUNDS[background])
     return Image.fromarray(rgb, "RGB"), {"background": background, "dark_share": round(dark, 3)}
 
@@ -305,6 +309,10 @@ def _run(op, in_dir, out_dir, params):
     src = Path(in_dir or "") / "image_rgb.png"
     if not in_dir or not src.is_file():
         raise StepError("missing_input", "generate needs a prep version (image_rgb.png)")
+    if p.get("backend") == "comfyui":
+        from steps import _comfy3d
+
+        return _comfy3d.run(in_dir, out_dir, p)
     import torch
 
     from steps._bake import bake_volume, rasterize_uv, write_glb

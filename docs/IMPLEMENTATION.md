@@ -3925,6 +3925,41 @@ without starting the service. No ComfyUI modules are imported into MIT code and 
 owns ComfyUI downloads/caches; the main folder remains searchable. Native download paths and existing
 models are unchanged. Checks: `tests/test_comfyui.py`, `ui/tests/comfyui.spec.ts`.
 
+### Generate 3D through optional ComfyUI
+
+`server/jobs.submit` pins `trellis2` generation to `backend: "comfyui"` when ComfyUI is selected in Setup,
+otherwise `"native"`. Retexturing is unchanged. A selected backend that cannot start fails visibly; it never
+falls back to a different generator. This applies to UI, API and MCP callers alike.
+
+`workflows/pixal3d_generate.json` is the API-format generation graph. `steps/_comfy3d.py` binds seed, preset,
+reference and camera settings and retrieves numeric mesh/material data over loopback HTTP. Native ComfyUI
+nodes run MoGe camera estimation, DINO conditioning, structure, shape, texture and solid reconstruction.
+`comfy_nodes/effigy_3d` is GPL-3.0-or-later and runs only inside ComfyUI: dependency barriers unload weights
+between stages, cap CUDA allocations to the startup budget and export non-pickle arrays. MIT code never
+imports it. Multi-view conditioning preserves the prep's actual camera transforms rather than imposing a
+new orbit distance. No custom ComfyUI package is fetched at runtime.
+
+The initial high-poly mesh is unwrapped through the existing UVgami subprocess, then the existing bake code
+projects materials from the raw surface and normal detail from the repaired one. `hi_trellis.ply` stays raw
+in source coordinates; `hi_clean.ply` is the repaired normal source in the library frame. Both and `ovoxel.npz`
+remain available to Prepare. Extra outputs: `basecolor.png`, `orm.png`, `normal.png`, `geometry_report.json`,
+`uv_report.json`. The geometry report covers the raw, the repaired and the final (decimated) mesh: open
+boundaries, non-manifold edges, components and tunnels;
+a watertight flag alone is not a visual-quality guarantee.
+
+ComfyUI-only generation parameters: `camera_auto` (default true: MoGe estimates the camera; false uses `fov`),
+`repair_resolution` (default 768), `repair_fill` (20; higher preserves more openings), `repair_smooth` (2),
+`uv_timeout` (1800 seconds), `uv_proxy_faces` (20000; UVgami's dense-mesh proxy seam transfer,
+not decimation of the output). Existing `faces`, `texture_size`, `steps`, `pipeline_type`, `height_m`, `background`
+and multi-view inputs remain in effect. Repair is not guaranteed to preserve every opening or fine feature.
+Metrics add `backend`, `workflow`, `unwrapper`, `camera_auto`, `geometry`, `islands`, `bake` and `shared_gb`.
+The latter is null when Windows memory counters are unavailable; measured spill above the monitoring
+threshold fails the job rather than returning a slow success. ComfyUI is released before UV/baking begins.
+
+Setup groups `comfy3d`, `comfy3d-fast`, `comfy3d-mv` use pinned single-file conversions in the selected
+ComfyUI model folder. `GET /api/setup/comfyui` also returns `generation_missing`, keyed by `faithful`,
+`fast`, `faithful_mv`, with the missing checkpoint paths. These are separate from native generation weights.
+
 ### ComfyUI workflows as image models
 
 A workflow is a pair of files (`workflows/README.md`): the graph in ComfyUI's API format and a manifest naming
@@ -3958,6 +3993,38 @@ included: 85.5 s with `--vram-headroom 1` (peak 14.7 GB), 130.3 s without (15.7 
 own prompt, and the 8.7 GB text encoder and the model do not fit the card together. `shared_gb` stayed at
 0.19 or below in every run. Unload (`/free`) to the free memory being back: 0.5 s. Checks:
 `tests/test_workflows.py`, `ui/tests/workflows.spec.ts`.
+
+### Learned PBR and texture workflow inference
+
+`textures` op `pbr` uses pinned `prs-eth/marigold-iid-appearance-v1-1` (revision
+`e7280a0a0fc5a0df0b36050882b3d8b77da22fd9`), installed through Setup's `pbr` group. The cache is the selected
+external model store's `huggingface/`, otherwise the native store's `hub/`. Inference only opens local files.
+`steps/_pbr.py` reads raw predictions: albedo sRGB, material R linear roughness and G linear metallic;
+visualisation gamma must not be applied to scalar data. Ten DDIM steps, 768 processing resolution.
+
+For meshes, the existing refine view planning, visibility gates and UV projection are reused on the CPU.
+Every role sees the same original view; cached CPU predictions let all three roles share each inference.
+Unseen texels retain their original channels. Only basecolor/roughness/metallic are replaced through the
+texture writer, preserving the original GLB's geometry, UVs, skin and animation, plus normal/AO maps.
+`metrics.projection` contains each role's view count and covered surface share. Predictions remain estimates,
+particularly uncertain for stylised art and shiny-looking non-metals. The UI offers PBR under Enhance;
+the older luminance-derived surface operation remains explicitly labelled, separately under Create new.
+
+`refine` op `run` and model `textures` op `enhance` accept `workflow` (edit workflow id). Jobs start the external
+ComfyUI exactly as for picture edits; render/projection tensors stay on CPU. An optional manifest `reference`
+binding receives the ancestor prep picture; `qwen21_texture` requires it and runs Qwen's two-image encoding.
+Masked op `edit` rejects workflow inference rather than pretending it masks the model's output. Native defaults
+are unchanged. Normal and ORM remain the input's for colour refinement. Workflow restrictions propagate.
+`trellis2` background `auto` now always selects grey; explicit backgrounds and legacy preps without RGBA keep
+their previous paths.
+
+Measured on RTX 5060 Ti 16 GB, Windows 11: one 1024 reference decomposition loaded in 9.15 s, load plus
+prediction 27.40 s, CUDA allocation peak 3.77 GiB. A 1024 atlas model, eight views projected for each role:
+381.27 s, peak allocated 3.77 GiB/reserved 4.363 GiB, 73.1% of the covered texture seen; remaining texels retained.
+Position, mesh normals and UV accessors matched the original exactly; AO and normal map pixels unchanged.
+One reference-guided Qwen redraw view through a real job: step 76.0 s; geometry and UVs unchanged, normal/ORM
+pixels unchanged, restricted licence attached. These checks establish execution/preservation, not universally
+accurate material recovery. Tests: `tests/test_pbr.py`, `tests/test_workflows.py`, `ui/tests/textures.spec.ts`.
 
 ## 5. Bench procedure (reference laptop)
 

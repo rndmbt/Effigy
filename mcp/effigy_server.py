@@ -642,6 +642,7 @@ TEXTURE_OPS = {
     "apply",
     "extract",
     "surface",
+    "pbr",
     "seamless",
 }
 
@@ -687,10 +688,10 @@ def edit_texture(
 ) -> dict:
     """Use this for every texture workflow; saves a new version and keeps model geometry, rigs and animation.
     op: create (color,size,tileable), generate (prompt,size,tileable; standalone colour), upscale (role,size),
-    resize (role,size; normals normalized), enhance (prompt,strength), edit (prompt,region upload,mask_source),
+    resize (role,size; normals normalized), enhance (prompt,strength,workflow optional on models), edit (prompt,region upload,mask_source),
     project (reference face), retexture (image=prep version,size; model colour/roughness/metallic),
     adjust (role,brightness,contrast,saturation,hue), settings (roughness,metallic,alpha_mode),
-    replace/import (uploads={role:upload version},normal_convention), surface (estimated missing maps),
+    replace/import (uploads={role:upload version},normal_convention), surface (brightness-derived missing maps), pbr (learned albedo, roughness and metallic),
     seamless (edge blend), apply (source_asset,source_version,source_material,mapping=atlas|repeat,repeat,rotation),
     extract (source_asset,source_version,source_material). material selects the destination slot; role defaults
     basecolor; size is width 64-4096 with a 16MP limit. Paint externally, import_file(asset_id=...), then replace.

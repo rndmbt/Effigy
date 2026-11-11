@@ -147,8 +147,15 @@
 - {name: uvgami, kind: tool, license: GPL-3.0-or-later, commercial: true, flag: "DanielBoxer/UVgami v2.3.0 Blender add-on (server/uvgami_install.py), the optional uv unwrapper; runs in Blender's own process with its own profile (blender_ops/uvgami.py); only its OptCuts engine: its PartUV engine segments with a non-commercial NVIDIA model"}
 - {name: optcuts, kind: tool, license: MIT, commercial: true, flag: "UVgami's OptCuts engine 1.23.1 release binary (liminchen/OptCuts); bundles Eigen, libigl (MPL-2.0), oneTBB (Apache-2.0), mimalloc (MIT)"}
 
+# Native ComfyUI single-file conversions retain the upstream weight licences.
+- {name: Comfy-Org/Pixal3D, kind: weights, license: MIT, commercial: true, flag: "Converted Pixal3D checkpoints and TRELLIS.2 VAEs; bundled DINOv3/NAF retain their own attribution requirements"}
+- {name: Comfy-Org/TRELLIS.2, kind: weights, license: MIT, commercial: true}
+- {name: Comfy-Org/MoGe, kind: weights, license: MIT, commercial: true}
+
 # --- data ---
 - {name: tests/fixtures/golden, kind: data, license: MIT, commercial: true, flag: "our prompts made into images by our concepts step (Z-Image-Turbo, Apache-2.0); no third-party images"}
 
 # --- palettes (research 15, M51) ---
 - {name: PICO-8 palette, kind: data, license: CC0-1.0, commercial: true, flag: "M51 pixelize: steps/palettes/pico-8.gpl, the 16-colour PICO-8 palette, released CC0 by Lexaloffle (the PICO-8 FAQ); a pixelize version that uses it lists this row"}
+
+- {name: prs-eth/marigold-iid-appearance-v1-1, kind: weights, license: CreativeML-Open-RAIL++-M, commercial: true, flag: "Learned albedo, roughness and metallic estimates; not measured material properties"}

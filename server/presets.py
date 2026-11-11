@@ -78,7 +78,7 @@ VRAM_GB = {
     "textures": (
         "op",
         "upscale",
-        {"upscale": 2.0, "generate": 8.5, "enhance": 12.3, "retexture": 9.0},
+        {"upscale": 2.0, "generate": 8.5, "enhance": 12.3, "retexture": 9.0, "pbr": 4.4},
     ),
     # phase0.md: Fast's decode peak 8.1, 9.0 reserved under cudaMallocAsync; m2.md: Faithful 13.31
     "trellis2": ("weights", "fast", {"fast": 9.0, "faithful": 13.3}),

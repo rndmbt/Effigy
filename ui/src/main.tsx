@@ -2313,6 +2313,7 @@ function Slider(p: { name: string; label: string; min: number; max: number; step
 // M43b: the texture's detail redrawn by the Tile model from zoomed views; a refine version shows each view before | after
 function DetailPanel(props: { asset: string; version: Meta; versions: Meta[]; chain: Chain; missing: boolean }) {
   const [busy, run] = useBusy();
+  const [workflow, modelPick] = useModel("edit", true, true);
   const brief = ancestors(props.versions, props.version).find((a) => a.step === "brief");
   const [prompt, setPrompt] = useState(String(brief?.params.prompt ?? ""));
   const [strength, setStrength] = useState(1);
@@ -2353,11 +2354,12 @@ function DetailPanel(props: { asset: string; version: Meta; versions: Meta[]; ch
     });
   const go = (params: object) => run(() => props.chain(props.asset, v.version, [["refine", { ...params, ...(delight ? { delight } : {}) }]]));
   // a redraw: the strength, the description if any, 4K if ticked
-  const redraw = (params: object) => go({ strength, ...(prompt.trim() ? { prompt: prompt.trim() } : {}), ...(k4 ? { texture_size: 4096 } : {}), ...params });
+  const redraw = (params: object) => go({ ...(workflow ? { workflow } : {}), strength, ...(prompt.trim() ? { prompt: prompt.trim() } : {}), ...(k4 ? { texture_size: 4096 } : {}), ...params });
   const shadows = m.ao_luma_corr != null && Number(m.delight) > 0 ? ` Baked shadows taken out (${m.delight}): their trace in the colours ${m.ao_luma_corr_before} → ${m.ao_luma_corr}.` : "";
   return (
     <section id="detail">
       <h3>Texture detail</h3>
+      {modelPick}
       {(v.step === "refine" || (v.step === "textures" && ["enhance", "edit"].includes(String(m.operation)))) && (
         <>
           <p className="muted">
@@ -2375,7 +2377,7 @@ function DetailPanel(props: { asset: string; version: Meta; versions: Meta[]; ch
           )}
         </>
       )}
-      {props.missing && (
+      {props.missing && !workflow && (
         <p className="note warn">
           The texture-detail model wasn't found. <a className="button small" href={setupAt("refine")}>Set it up</a>.
         </p>
@@ -2395,11 +2397,11 @@ function DetailPanel(props: { asset: string; version: Meta; versions: Meta[]; ch
         <label className="check" title="4096² instead of the texture's size, for characters seen up close: more views on a tall model (about twice), and the time and memory are not measured yet">
           <input type="checkbox" checked={k4} onChange={(e) => setK4(e.target.checked)} /> 4K texture (slower, not measured yet)
         </label>
-        <button className="primary" disabled={busy || props.missing} onClick={() => redraw({})}>
+        <button className="primary" disabled={busy || (props.missing && !workflow)} onClick={() => redraw({})}>
           Refine texture
         </button>
         <button
-          disabled={busy || props.missing}
+          disabled={busy || (props.missing && !workflow)}
           title="Redraws the square in the middle of the 3D view as it is now, with the description above: frame a detail, describe it, click"
           onClick={() => redraw({ views: [window.__viewer!.view()] })}
         >
@@ -2858,6 +2860,9 @@ function GeneratePanel(props: {
   };
   const [seed, setSeed] = useState("");
   const [background, setBackground] = useState("auto");
+  const [comfy, setComfy] = useState<ComfyUIState | null>(null);
+  const [backendError, setBackendError] = useState(false);
+  useEffect(() => { api.comfyUI().then(setComfy, () => setBackendError(true)); }, []);
   const [busy, run] = useBusy();
   const [gpu, setGpu] = useState<Check | null>(); // undefined: still asking; null: no answer
   useEffect(() => {
@@ -2877,6 +2882,9 @@ function GeneratePanel(props: {
   const [name, blurb] = GENERATORS[chosen] ?? [chosen, ""];
   const short = name;
   const group = String(props.presets[chosen]?.weights ?? chosen); // the download a preset needs: its weights
+  const comfyGroup = group === "faithful" && props.version.params?.op === "views" ? "faithful_mv" : group;
+  const missing3D = comfy?.generation_missing?.[comfyGroup] ?? [];
+  const setupNeeded = comfy?.enabled ? !comfy.installed || missing3D.length > 0 : props.missing(group);
   const big = chosen ? tooBig(chosen) : undefined; // every generator too big: the first is shown, and why it cannot run
   // a cut-out of a redraw (Animate this character): a blank face or other clothes are a seed away
   const redrawn = props.versions.find((x) => x.version === props.version.parent && x.step === "canon");
@@ -2888,22 +2896,26 @@ function GeneratePanel(props: {
   return (
     <section id="generate">
       <h3>Generate the 3D model</h3>
-      <p className="muted">Generate a 3D model from this reference.</p>
+      <p className="muted">{comfy?.enabled
+        ? "ComfyUI workflow: camera-aware generation, high-poly repair, UVgami and PBR / normal-detail baking."
+        : "Generate a 3D model from this reference using the native backend."}</p>
       <p>
         {name}
-        {chosen === best && !tooBig(chosen) && names.length > 1 ? " — Recommended for this GPU" : ""} <span className="muted">{blurb}</span>
+        {chosen === best && !tooBig(chosen) && names.length > 1 ? " — Recommended for this GPU" : ""} <span className="muted">{comfy?.enabled ? "Uses the optional ComfyUI backend." : blurb}</span>
       </p>
-      {chosen && props.missing(group) ? (
+      {backendError && <p className="note warn">Could not read generation backend settings. Reload before generating.</p>}
+      {chosen && setupNeeded ? (
         <>
-          <p className="note warn">The {short} generator's files weren't found. Your reference stays here.</p>
-          <a className="button primary" href={setupAt(group)}>
+          <p className="note warn">{comfy?.enabled ? "The selected ComfyUI generator needs setup; the native backend will not be used instead." : `The ${short} generator's files weren't found. Your reference stays here.`}</p>
+          {comfy?.enabled && missing3D.length > 0 && <p className="muted">Missing ComfyUI models: {missing3D.join(", ")}</p>}
+          <a className="button primary" href={setupAt(comfy?.enabled ? (comfyGroup === "fast" ? "comfy3d-fast" : comfyGroup === "faithful_mv" ? "comfy3d-mv" : "comfy3d") : group)}>
             Set up {short}
           </a>
         </>
       ) : (
         <button
           className="primary"
-          disabled={busy || !chosen || !seedOk || !!big}
+          disabled={busy || !comfy || !chosen || !seedOk || !!big}
           onClick={() =>
             run(() =>
               props.chain(props.asset, props.version.version, [
@@ -2982,7 +2994,7 @@ function GeneratePanel(props: {
           </label>
           <p className="muted">
             The generator sees your cut-out on a plain background. On black, very dark parts can look like background and come out missing, such as a black
-            cat's back. Grey avoids that. Automatic uses grey for Fast when the subject is dark.
+            cat's back. Grey avoids that. Automatic uses grey for both generators.
           </p>
           <label>
             Seed (empty = random)
@@ -5520,12 +5532,16 @@ const gb = (bytes: number) => `${(bytes / 1e9).toFixed(2)} GB`;
 // what each install group enables (tools/download_models.py groups)
 // in workflow order
 const CAPABILITIES: [string, string, string][] = [
+  ["comfy3d", "3D model through ComfyUI", "Camera-calibrated Pixal3D, high-poly repair, UVgami and PBR / normal-detail baking."],
+  ["comfy3d-fast", "Fast 3D through ComfyUI", "TRELLIS.2 with the same high-poly finish."],
+  ["comfy3d-mv", "Multi-view 3D through ComfyUI", "Pixal3D from front, left, back and right references."],
   ["concepts", "Concept images", "Makes four pictures from your description."],
   ["faithful", "3D model, Faithful (recommended)", "Makes the 3D model from your picture. This is the recommended one."],
   ["fast", "3D model, Fast (alternative)", "Makes the 3D model from your picture with less memory. Use it if Faithful does not run."],
   ["multiview", "3D model from four views", "Makes the Faithful 3D model from a four-view turnaround of your character or object instead of one picture (22 GB more)."],
   ["texture", "Face detail", "Sharpens your picture before it is copied onto the face."],
   ["refine", "Texture detail", "Redraws a texture's fine detail, such as buttons, stitching and wood grain (Z-Image + Tile, 2 GB more)."],
+  ["pbr", "Learned PBR materials", "Marigold estimates unlit albedo, roughness and metallic. Existing normals and AO remain unchanged."],
   [
     "refine-full",
     "Texture detail, full",

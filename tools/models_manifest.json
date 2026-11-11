@@ -1,4 +1,42 @@
 {
+ "Comfy-Org/Pixal3D@f37641be3767 comfy3d comfy3d-fast comfy3d-mv -> .": {
+  "clip_vision/dino_v3_L_naf_fp32.safetensors": [
+   1215214176,
+   "4ad2ec4e0879a5b5b04cd97325cc37da954a7b6edca5170b86510f17f2b2290f"
+  ],
+  "vae/trellis_2_shape_vae_bf16.safetensors": [
+   1095844024,
+   "de0cb4949a76c59ee5c091a995a69bcc8c51d5aeda939f0c641a50d2a72341f4"
+  ],
+  "vae/trellis_2_texture_vae_bf16.safetensors": [
+   948461364,
+   "714e5ebf094a610e12a8e3b5175c18a62f37f6ea4218acb6073644456b73ab0e"
+  ]
+ },
+ "Comfy-Org/Pixal3D@f37641be3767 comfy3d -> .": {
+  "diffusion_models/pixal3d_int8_convrot.safetensors": [
+   5584555824,
+   "4621eac3b715484f79303c7152af641fe0b2b14f4d0e3d394fd6922d00f955ec"
+  ]
+ },
+ "Comfy-Org/Pixal3D@f37641be3767 comfy3d-mv -> .": {
+  "diffusion_models/pixal3d_multiview_int8_convrot.safetensors": [
+   5584555824,
+   "6b1eb3328930d921d3b57508d9c46cceec1c174dcedeebc14f176ab67d49f477"
+  ]
+ },
+ "Comfy-Org/TRELLIS.2@430a9d09b241 comfy3d-fast -> .": {
+  "diffusion_models/trellis_2_int8_convrot.safetensors": [
+   5253048192,
+   "d01952ad137213f6a868f86b6b877026276f84af5eec23069217475a0bad3a31"
+  ]
+ },
+ "Comfy-Org/MoGe@1484985258ba comfy3d -> .": {
+  "geometry_estimation/moge_2_vitl_normal_fp16.safetensors": [
+   661859924,
+   "cb1a692d03235671e959e81360d7b4d9f44aefadb1f852d6ca6aa17799d5e31f"
+  ]
+ },
  "McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-supervised@baa8ebf04a1c kimodo -> HF cache": {
   ".gitattributes": [
    1519,
@@ -903,6 +941,56 @@
   "z_image_turbo_childrens_drawings.safetensors": [
    170128264,
    "25b9959eb2054ccb9dd1815e90add6da3818f550e8e60a081392095830ff0f7a"
+  ]
+ },
+ "prs-eth/marigold-iid-appearance-v1-1@e7280a0a0fc5 pbr -> HF cache": {
+  "model_index.json": [
+   970,
+   null
+  ],
+  "scheduler/scheduler_config.json": [
+   533,
+   null
+  ],
+  "text_encoder/config.json": [
+   633,
+   null
+  ],
+  "text_encoder/model.fp16.safetensors": [
+   680820392,
+   "bc1827c465450322616f06dea41596eac7d493f4e95904dcb51f0fc745c4e13f"
+  ],
+  "tokenizer/merges.txt": [
+   524619,
+   null
+  ],
+  "tokenizer/special_tokens_map.json": [
+   460,
+   null
+  ],
+  "tokenizer/tokenizer_config.json": [
+   855,
+   null
+  ],
+  "tokenizer/vocab.json": [
+   1059962,
+   null
+  ],
+  "unet/config.json": [
+   1814,
+   null
+  ],
+  "unet/diffusion_pytorch_model.fp16.safetensors": [
+   1731973872,
+   "6c7ab00d751edc8ac26a56d6d5bdcef600f2577b7ec708bea9cbac3fb12eda39"
+  ],
+  "vae/config.json": [
+   711,
+   null
+  ],
+  "vae/diffusion_pytorch_model.fp16.safetensors": [
+   167335342,
+   "3e4c08995484ee61270175e9e7a072b66a6e4eeb5f0c266667fe1f45b90daf9a"
   ]
  },
  "renderartist/Classic-Painting-Z-Image-Turbo-LoRA@e873cc474ce5 styles -> HF cache": {

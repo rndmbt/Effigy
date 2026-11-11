@@ -58,6 +58,11 @@ def entries() -> list[dict]:
 def _files(e: dict) -> list[Path]:
     """The files of one entry (symlinks skipped: HF-cache snapshots point at blobs)."""
     base = root() / e["where"]
+    if any(g.startswith("comfy3d") for g in e.get("groups", [])):
+        base = settings.comfyui_models()
+        return [base / f for f in e["filters"]["allow_patterns"] if (base / f).is_file()]
+    if e.get("groups") == ["pbr"]:
+        base = settings.pbr_cache() / ("models--" + e["name"].replace("/", "--"))
     if base.is_file():
         return [base]
     allow, ignore = e["filters"].get("allow_patterns"), e["filters"].get("ignore_patterns", [])
@@ -86,6 +91,10 @@ def _size(f: Path) -> int:
 def target(e: dict, rel: str) -> Path:
     """Where a manifest file of an entry is on disk (an HF-cache repo: in its pinned snapshot)."""
     base = root() / e["where"]
+    if any(g.startswith("comfy3d") for g in e.get("groups", [])):
+        base = settings.comfyui_models()
+    if e.get("groups") == ["pbr"]:
+        base = settings.pbr_cache() / ("models--" + e["name"].replace("/", "--"))
     if e["hub"]:
         return base / "snapshots" / e["revision"] / rel
     return base / rel if rel else base

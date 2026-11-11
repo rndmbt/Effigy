@@ -374,9 +374,9 @@ def test_a_failure_inside_the_models_evicts_the_resident_pipeline(tmp_path, monk
     assert "faithful" in trellis2.PIPES
 
 
-def test_a_dark_subject_goes_on_grey_for_fast(tmp_path):
+def test_auto_background_is_grey_for_both_generators(tmp_path):
     """The models see the cut-out on a flat background; black hides black fur (a black cat came out without its
-    back with Fast): auto puts a dark subject on grey for Fast, black otherwise; a choice wins."""
+    back with Fast): auto uses grey for both generators, and an explicit choice wins."""
     rgba = np.zeros((40, 40, 4), np.uint8)
     rgba[10:30, 10:30] = (10, 10, 10, 255)  # a black square: all of the subject near black
     Image.fromarray(rgba, "RGBA").save(tmp_path / "image.png")
@@ -385,14 +385,12 @@ def test_a_dark_subject_goes_on_grey_for_fast(tmp_path):
     assert np.asarray(img)[0, 0].tolist() == [128, 128, 128] and np.asarray(img)[
         20, 20
     ].tolist() == [10, 10, 10]
-    assert (
-        trellis2._framed(tmp_path, "auto", "faithful")[1]["background"] == "black"
-    )  # projects: whole on black
+    assert trellis2._framed(tmp_path, "auto", "faithful")[1]["background"] == "grey"
     assert trellis2._framed(tmp_path, "white", "faithful")[1]["background"] == "white"
     rgba[10:30, 10:30] = (200, 180, 160, 255)  # a light subject
     Image.fromarray(rgba, "RGBA").save(tmp_path / "image.png")
     assert trellis2._framed(tmp_path, "auto", "fast")[1] == {
-        "background": "black",
+        "background": "grey",
         "dark_share": 0.0,
     }
     (tmp_path / "image.png").unlink()  # a prep from before the option: its black composite

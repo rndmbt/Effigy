@@ -21,13 +21,61 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from server.settings import models_root
+from server.settings import comfyui_models, models_root, pbr_cache
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = models_root()  # EFFIGY_MODELS, else the folder chosen in the app (M35c)
 os.environ.setdefault("HF_HUB_CACHE", str(MODELS / "hub"))
 # (groups, repo, revision, local folder or None = HF cache, snapshot_download filters)
 PINNED = [
+    (
+        "comfy3d comfy3d-fast comfy3d-mv",
+        "Comfy-Org/Pixal3D",
+        "f37641be376725d324c56626007cc477f1249a69",
+        ".",
+        {
+            "allow_patterns": [
+                "clip_vision/dino_v3_L_naf_fp32.safetensors",
+                "vae/trellis_2_shape_vae_bf16.safetensors",
+                "vae/trellis_2_texture_vae_bf16.safetensors",
+            ]
+        },
+    ),
+    (
+        "comfy3d",
+        "Comfy-Org/Pixal3D",
+        "f37641be376725d324c56626007cc477f1249a69",
+        ".",
+        {"allow_patterns": ["diffusion_models/pixal3d_int8_convrot.safetensors"]},
+    ),
+    (
+        "comfy3d-mv",
+        "Comfy-Org/Pixal3D",
+        "f37641be376725d324c56626007cc477f1249a69",
+        ".",
+        {"allow_patterns": ["diffusion_models/pixal3d_multiview_int8_convrot.safetensors"]},
+    ),
+    (
+        "comfy3d-fast",
+        "Comfy-Org/TRELLIS.2",
+        "430a9d09b2416687018c8fe8edced2ad4858a439",
+        ".",
+        {"allow_patterns": ["diffusion_models/trellis_2_int8_convrot.safetensors"]},
+    ),
+    (
+        "comfy3d",
+        "Comfy-Org/MoGe",
+        "1484985258ba7ef45c314144fcf0e90924ffbf44",
+        ".",
+        {"allow_patterns": ["geometry_estimation/moge_2_vitl_normal_fp16.safetensors"]},
+    ),
+    (
+        "pbr",
+        "prs-eth/marigold-iid-appearance-v1-1",
+        "e7280a0a0fc5a0df0b36050882b3d8b77da22fd9",
+        None,
+        {"allow_patterns": ["*.json", "tokenizer/*", "*/*.fp16.safetensors"]},
+    ),
     (
         "fast",
         "microsoft/TRELLIS.2-4B",
@@ -410,7 +458,10 @@ def main(groups: list[str]) -> int:
             snapshot_download(
                 repo,
                 revision=revision,
-                local_dir=MODELS / folder if folder else None,
+                local_dir=(comfyui_models() if group.startswith("comfy3d") else MODELS / folder)
+                if folder
+                else None,
+                **({"cache_dir": pbr_cache()} if group == "pbr" else {}),
                 **(filters or {}),
             )
         except GatedRepoError:

@@ -81,6 +81,9 @@ props.priority = p.get("priority", "BALANCED")
 props.symmetry = bool(p.get("symmetry", True))
 props.keep_quads = True
 props.pack_after_unwrap = True
+props.use_proxy = "proxy_faces" in p
+if props.use_proxy:
+    props.proxy_faces = int(p["proxy_faces"])
 t0 = time.time()
 pump = Pump()
 saved = {n: getattr(bpy.app.timers, n) for n in ("register", "is_registered", "unregister")}
@@ -90,6 +93,9 @@ try:
     bpy.ops.uvgami.start()
     pump.run_until(lambda: manager.is_active, 120)
     pump.run_until(lambda: not manager.is_active, float(p.get("timeout", 1800)))
+except Exception:
+    manager.cancel_session()  # stop OptCuts too when a dense high-poly unwrap times out
+    raise
 finally:
     for n, f in saved.items():
         setattr(bpy.app.timers, n, f)
