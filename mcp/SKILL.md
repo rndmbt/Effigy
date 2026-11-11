@@ -79,7 +79,8 @@ specks after bake, or when you need it watertight; never on a character or a mod
 "topology": "tri"|"quad", "symmetry": false|"x"}`; check `metrics.hausdorff_pct`; thin boards with slits tear
 at any budget: `"close": 0.012` (metres) shuts the slits first; grooves narrower than it smooth out, the normal
 map keeps them; without `close` a generated prop that comes back over 5 % folded through itself is remeshed again
-with its length / 150, `metrics.closed`; `"close": 0` never) -> `uv` -> `bake`
+with its length / 150, `metrics.closed`; `"close": 0` never) -> `uv` (`"unwrapper": "uvgami"`: a few large
+islands on an organic model, once `server.uvgami_install` ran) -> `bake`
 (`{"texture_size": 2048, "normal_map": true}`: PBR + normal map from the generator's volume, or, for an imported model, from its own
 materials and textures (recipe: `import_file` -> `clean` -> `remesh` -> `uv` -> `bake` -> `rig_fit` -> `rig_skin` ->
 `anim` -> `export`; a foreign skeleton is dropped, ours is fitted; no materials at all: `missing_input`); `hi_denoise` 6,

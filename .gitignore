@@ -3,6 +3,7 @@
 /models/
 /blender/
 /gltfpack/
+/uvgami/
 /scratch/
 .venv*/
 .env

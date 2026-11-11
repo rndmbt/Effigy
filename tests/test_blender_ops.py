@@ -743,3 +743,19 @@ def test_solid_cleanup_counts_the_parts_it_drops(tmp_path):
     m = trimesh.util.concatenate([body, sword])
     v, _, info = solid_cleanup(np.asarray(m.vertices), np.asarray(m.faces), tmp_path, res=80)
     assert info["parts_dropped"] == 1 and np.ptp(v[:, 0]) < 0.45
+
+
+def test_uvgami_unwraps_a_sphere(sphere, tmp_path, monkeypatch):
+    """uv unwrapper uvgami: UVgami's OptCuts in Effigy's Blender, its own profile; UVs in [0, 1], few islands."""
+    from server import uvgami_install
+    from steps._mesh import read_glb, uv_report
+
+    if not uvgami_install.installed():
+        pytest.skip("UVgami not installed (server.uvgami_install)")
+    monkeypatch.setenv("BLENDER_USER_RESOURCES", str(uvgami_install.profile()))
+    monkeypatch.setenv("UVGAMI_ENGINE_DIR", str(uvgami_install.engine_dir()))
+    rep = run_blender("uvgami", [sphere], tmp_path, {})["report"]
+    v, f, uv = read_glb(tmp_path / "mesh.glb")
+    assert uv is not None and uv.min() >= 0 and uv.max() <= 1 and rep["uv_layers"] == 1
+    assert uv_report(uv, f, v)["islands"] <= 4  # as written: corners split only at seams
+    assert len(f) >= 900  # the sphere's 32 x 16 faces, triangulated by the export

@@ -118,6 +118,8 @@
 # --- tools (downloaded, not shipped) ---
 - {name: blender, kind: tool, license: GPL-3.0-or-later, commercial: true, attribution: ""}
 - {name: gltfpack, kind: tool, license: MIT, commercial: true, flag: "zeux/meshoptimizer v0.25 release binary (server/gltfpack_install.py); bundles Basis Universal (Apache-2.0) and libwebp (BSD-3-Clause)"}
+- {name: uvgami, kind: tool, license: GPL-3.0-or-later, commercial: true, flag: "DanielBoxer/UVgami v2.3.0 Blender add-on (server/uvgami_install.py), the optional uv unwrapper; runs in Blender's own process with its own profile (blender_ops/uvgami.py); only its OptCuts engine: its PartUV engine segments with a non-commercial NVIDIA model"}
+- {name: optcuts, kind: tool, license: MIT, commercial: true, flag: "UVgami's OptCuts engine 1.23.1 release binary (liminchen/OptCuts); bundles Eigen, libigl (MPL-2.0), oneTBB (Apache-2.0), mimalloc (MIT)"}
 
 # --- data ---
 - {name: tests/fixtures/golden, kind: data, license: MIT, commercial: true, flag: "our prompts made into images by our concepts step (Z-Image-Turbo, Apache-2.0); no third-party images"}

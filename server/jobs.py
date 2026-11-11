@@ -15,7 +15,15 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from server import blender_install, gltfpack_install, gpu_amd, library, presets, settings
+from server import (
+    blender_install,
+    gltfpack_install,
+    gpu_amd,
+    library,
+    presets,
+    settings,
+    uvgami_install,
+)
 from server.library import ApiError
 from server.presets import LOWER
 
@@ -179,6 +187,7 @@ def _env(budget: float | None = None) -> dict:
             ),
             "EFFIGY_BLENDER": str(blender_install.blender_exe()),
             "EFFIGY_GLTFPACK": str(gltfpack_install.gltfpack_exe()),
+            "EFFIGY_UVGAMI": str(uvgami_install.HOME),
         }
         | _pin_gpu()
     )

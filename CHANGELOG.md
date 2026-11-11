@@ -4,6 +4,18 @@ What changed for people who use Effigy, newest first. Each release's download an
 [releases page](https://github.com/SifuInTheShell/Effigy/releases); what was built and measured, milestone by
 milestone, is in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) §4.
 
+## Unreleased
+
+- **UVgami as an option for UVs.** The UV step can unwrap with UVgami (OptCuts) instead of the built-in charts
+  (`unwrapper: "uvgami"`, in Advanced: run any step). On an organic model it gives a few large islands instead of
+  many small ones and far shorter seams, at a little more stretch and about 45 s instead of 5 s. Install it once
+  with `uv run python -m server.uvgami_install`; the built-in unwrap stays the default.
+
+### For agents
+
+- New step parameters, all described in [mcp/SKILL.md](mcp/SKILL.md):
+  - `uv`: `unwrapper`, `priority`, `symmetry` and `timeout`.
+
 ## 0.3.0 (2026-11-05)
 
 M64 to M68 were built in a cloud session without a GPU or Blender; the unit and interface tests pass. On the
