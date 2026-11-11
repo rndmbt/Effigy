@@ -323,7 +323,10 @@ def test_models_listing_and_remove(client, tmp_path, monkeypatch):
 def test_licenses_route(client):
     rows = client.get("/api/licenses").json()
     root = Path(__file__).resolve().parents[1]
-    assert rows == yaml.safe_load((root / "licenses.yaml").read_text(encoding="utf-8"))
+    listed = yaml.safe_load((root / "licenses.yaml").read_text(encoding="utf-8"))
+    assert rows[: len(listed)] == listed
+    # after them, the models of the ComfyUI workflows, from their manifests
+    assert {r["flag"] for r in rows[len(listed) :]} == {"a ComfyUI workflow's model"}
     assert any(r.get("attribution") == "Built with DINOv3" for r in rows)
 
 

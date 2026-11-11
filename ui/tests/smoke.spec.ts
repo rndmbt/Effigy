@@ -828,16 +828,17 @@ test("Setup shows capabilities and renders every licenses.yaml row and the attri
   const yamlRows = readFileSync(new URL("../../licenses.yaml", import.meta.url), "utf8")
     .split("\n")
     .filter((l) => l.startsWith("- ")).length;
-  const rows: { name: string }[] = await (await request.get("/api/licenses")).json();
+  const rows: { name: string; flag?: string }[] = await (await request.get("/api/licenses")).json();
   const models: unknown[] = await (await request.get("/api/models")).json();
-  expect(rows.length).toBe(yamlRows);
+  // after them, the models of the ComfyUI workflows (their manifests, not licenses.yaml)
+  expect(rows.filter((r) => r.flag !== "a ComfyUI workflow's model").length).toBe(yamlRows);
 
   await page.goto("/#models"); // the old address still lands on Setup
   await expect(page).toHaveURL(/#\/setup$/);
   await toLibrary(page);
   await page.getByRole("navigation").getByRole("link", { name: "Setup" }).click();
   await expect(page.getByText("3D model, Faithful (recommended)")).toBeVisible();
-  await expect(page.locator("#licence-table tbody tr")).toHaveCount(yamlRows);
+  await expect(page.locator("#licence-table tbody tr")).toHaveCount(rows.length);
   for (const r of rows) await expect(page.locator("#licence-table tbody")).toContainText(r.name);
   await expect(page.locator("#attributions .attribution", { hasText: "Built with DINOv3" })).toBeVisible();
   await expect(page.locator("#model-table tbody tr")).toHaveCount(models.length);
@@ -1504,7 +1505,7 @@ test("Acceptance walk at 1280×720: a checked prop reaches Export before the cre
   await page.screenshot({ path: "test-results/walk-skinned-1280.png", animations: "disabled" });
 });
 
-test("Readiness: missing concept files make Set up the main action and keep the draft; a restricted version cannot be exported (UX-09)", async ({ page }) => {
+test("Readiness: missing concept files make Set up the main action and keep the draft; a restricted version is exported only for non-commercial use (UX-09)", async ({ page }) => {
   // the model list is read once when the app starts: mocked before the first page, or this machine's own
   // installed files decide (the test passed only where the concept models were missing)
   const row = { id: 1, name: "Tongyi-MAI/Z-Image-Turbo", groups: ["concepts"], revision: "r", where: "hub", installed: false, partial: false, bytes: 2, missing_bytes: 1 };
@@ -1514,7 +1515,8 @@ test("Readiness: missing concept files make Set up the main action and keep the 
   await page.goto("/#/asset/mock_restricted?version=010_upload");
   await tool(page, "Export");
   await expect(page.getByRole("button", { name: "Export for Godot" })).toBeDisabled();
-  await expect(page.locator(".panel")).toContainText("This model is restricted, so it cannot be exported.");
+  await page.getByLabel(/This model is restricted \(see Licences\): I export it for non-commercial use only/).check();
+  await expect(page.getByRole("button", { name: "Export for Godot" })).toBeEnabled();
   const posted = await mockAsset(page, "mock_ready", [
     { version: "010_brief", step: "brief", parent: null, params: { prompt: "a lantern", category: "prop" }, outputs: { brief: "brief.yaml" } },
   ]);

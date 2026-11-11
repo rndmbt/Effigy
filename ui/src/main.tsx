@@ -2,6 +2,7 @@
 import "./styles.css";
 import { NewTexture, TextureWorkspace } from "./textures/Workspace";
 import { ComfyUISetup } from "./ComfyUI";
+import { EditPicture, useModel, usePromptParts } from "./Workflows";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -1281,6 +1282,8 @@ function NewAsset(props: {
   const [over, setOver] = useState(false);
   const [fileKey, setFileKey] = useState(0); // remounts the file input to clear it
   const [busy, run] = useBusy();
+  const [model, modelPick] = useModel("image");
+  const [framing, variants, promptParts] = usePromptParts(category, prompt);
   const made = useRef<string | null>(null); // the asset a failed attempt created: retry in it, not in a new one
   const choose = async (f: File | null) => {
     if (info?.url) URL.revokeObjectURL(info.url);
@@ -1322,8 +1325,8 @@ function NewAsset(props: {
         } else if (mode === "describe") {
           props.onCreated(id);
           ok = !!(await props.chain(id, null, [
-            ["brief", { prompt, category }],
-            ["concepts", {}],
+            ["brief", { prompt, category, ...framing }],
+            ["concepts", { ...variants, ...(model ? { workflow: model } : {}) }],
           ]));
         } else {
           const up = await api.upload(id, file!);
@@ -1455,9 +1458,13 @@ function NewAsset(props: {
             {dim === "2d" ? (
               <PictureForm kind={kind2} onKind={setKind2} missing={props.missing} ready={!!prompt.trim()} busy={busy} onRun={pictures} />
             ) : (
-              <Category name="new-category" value={category} onChange={setCategory} />
+              <>
+                <Category name="new-category" value={category} onChange={setCategory} />
+                {modelPick}
+                {promptParts}
+              </>
             )}
-            {dim === "2d" ? null : props.missing("concepts") ? (
+            {dim === "2d" ? null : props.missing("concepts") && !model ? (
               <>
                 <p className="note warn">Concept-image files weren't found. Your description stays here while you set them up.</p>
                 <a className="button primary" href={setupAt("concepts")}>
@@ -1549,6 +1556,7 @@ const STEP_ACTS: Record<string, string> = {
   prep: "Removing the background",
   pixelize: "Making pixel art",
   redraw: "Redrawing the picture",
+  edit: "Editing the picture",
   sprites: "Rendering sprites",
   trellis2: "Generating the 3D model",
   clean: "Cleaning",
@@ -2057,7 +2065,12 @@ function Workspace(props: {
             </ul>
           )}
             {imported && <p className="muted">Your file: Effigy does not know this file's licence. It is yours to check.</p>}
-            {v.restricted && <p className="error">Restricted: a component of this version is not cleared for commercial use, so it cannot be exported.</p>}
+            {v.restricted && (
+              <p className="note warn">
+                Restricted: a component of this version is not cleared for commercial use. Use it in prototypes and personal projects; an export carries
+                this note in its CREDITS.txt.
+              </p>
+            )}
           </aside>
         )}
         {side === "history" && (
@@ -2600,6 +2613,7 @@ function ToolBody(props: {
   missing: (group: string) => boolean;
 }) {
   const [busy, run] = useBusy();
+  const [model, modelPick] = useModel("image");
   const v = props.version;
   const { versions, tool } = props;
   const go = (parent: string | null, steps: [string, object][]) => run(() => props.chain(props.asset, parent, steps));
@@ -2614,12 +2628,13 @@ function ToolBody(props: {
       return <EditBrief asset={props.asset} version={v} versions={versions} chain={props.chain} missing={props.missing("concepts")} />;
     case "concepts": {
       if (v.step !== "brief") return <ConceptsPanel />;
-      const missing = props.missing("concepts"); // UX-09: a known-missing capability makes the setup link the main action
+      const missing = props.missing("concepts") && !model; // UX-09: a known-missing capability makes the setup link the main action
       return (
         <>
           <p>
             "{String(v.params.prompt ?? "")}" · {String(v.params.category ?? "")}
           </p>
+          {modelPick}
           {missing ? (
             <>
               <p className="note warn">Concept-image files weren't found. Your description stays here.</p>
@@ -2628,13 +2643,15 @@ function ToolBody(props: {
               </a>
             </>
           ) : (
-            <button className="primary" disabled={busy} onClick={() => go(v.version, [["concepts", {}]])}>
+            <button className="primary" disabled={busy} onClick={() => go(v.version, [["concepts", model ? { workflow: model } : {}]])}>
               Generate 4 concepts
             </button>
           )}
         </>
       );
     }
+    case "edit":
+      return <EditPicture asset={props.asset} version={v} chain={props.chain} />;
     case "prep":
       return (
         <>
@@ -2774,6 +2791,8 @@ function EditBrief(props: { asset: string; version: Meta; versions: Meta[]; chai
   const [prompt, setPrompt] = useState(String(brief?.params.prompt ?? ""));
   const [category, setCategory] = useState(String(brief?.params.category ?? "prop"));
   const [busy, run] = useBusy();
+  const [model, modelPick] = useModel("image");
+  const [framing, variants, promptParts] = usePromptParts(category, prompt);
   return (
     <div className="stack">
       <label>
@@ -2781,13 +2800,15 @@ function EditBrief(props: { asset: string; version: Meta; versions: Meta[]; chai
         <textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
       </label>
       <Category name="edit-category" value={category} onChange={setCategory} />
+      {modelPick}
+      {promptParts}
       <button
-        disabled={busy || props.missing || !prompt.trim()}
+        disabled={busy || (props.missing && !model) || !prompt.trim()}
         onClick={() =>
           run(() =>
             props.chain(props.asset, null, [
-              ["brief", { prompt, category }],
-              ["concepts", {}],
+              ["brief", { prompt, category, ...framing }],
+              ["concepts", { ...variants, ...(model ? { workflow: model } : {}) }],
             ]),
           )
         }
@@ -3164,10 +3185,13 @@ function ExportPanel(props: {
   const rigged = !!props.mesh && ["rig_skin", "anim", "anim_edit"].includes(actsAs(props.mesh));
   const [collision, setCollision] = useState(!rigged);
   const [busy, run] = useBusy();
+  const [agreed, setAgreed] = useState(false); // a restricted model leaves only with the user's word (non-commercial use)
+  const restricted = !!props.mesh?.restricted;
   const d = profiles.find((e) => e.id === dest)!;
   const fails = Number(props.report?.metrics?.fail ?? 0);
   const params = {
     profile: dest,
+    ...(restricted ? { allow_restricted: true } : {}),
     ...(d.lods ? { lods } : {}),
     ...(d.collision ? { collision } : {}),
   };
@@ -3206,11 +3230,16 @@ function ExportPanel(props: {
       <p className="muted">
         {props.mesh && `This exports "${label(props.mesh)}" (${props.mesh.version.slice(0, 3)}). `}
         {!props.report ? "It has not been checked yet." : fails ? `${fails} check${fails > 1 ? "s" : ""} failed, so the export is not certified ready.` : ""}
-        {props.mesh?.restricted && " This model is restricted, so it cannot be exported."}
       </p>
+      {restricted && (
+        <label className="check note warn">
+          <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> This model is restricted (see Licences): I export it for
+          non-commercial use only
+        </label>
+      )}
       <button
         className={props.primary ? "primary" : ""}
-        disabled={busy || !props.mesh || props.mesh.restricted}
+        disabled={busy || !props.mesh || (restricted && !agreed)}
         onClick={() => run(() => props.chain(props.asset, props.mesh!.version, [["export", params]]))}
       >
         {fails ? "Export anyway" : "Export"} for {d.name}
@@ -3297,7 +3326,13 @@ function Candidates(props: { asset: string; version: Meta; chain: Chain }) {
         >
           {chosen && fails(chosen).length ? "Use this image anyway" : "Use this image"}
         </button>
-        <button disabled={busy} onClick={() => run(() => props.chain(props.asset, v.parent, [["concepts", {}]]))}>
+        <button
+          disabled={busy}
+          onClick={() => {
+            const { workflow, variants } = v.params; // the same model and prompt parts, a new seed
+            return run(() => props.chain(props.asset, v.parent, [["concepts", { ...(workflow ? { workflow } : {}), ...(variants === false ? { variants } : {}) }]]));
+          }}
+        >
           Generate 4 more
         </button>
         {scores === null && (

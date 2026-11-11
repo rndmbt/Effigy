@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, fileUrl, type Meta } from "../api";
 import { useBusy } from "../hooks";
+import { EditPicture, useModel } from "../Workflows";
 import { ancestors } from "../workflow";
 import { is2D, pictureKeys } from "./View";
 
@@ -63,7 +64,8 @@ export function PictureForm(props: {
   const fits = (x: number) => Number.isInteger(x) && x % SIDE.step === 0 && x >= SIDE.min && x <= SIDE.max;
   const sized = tile || (fits(w) && fits(h));
   const noStyles = props.missing("styles");
-  if (props.missing("concepts"))
+  const [model, modelPick] = useModel("image", !tile); // a tile's seams are mended by the built-in model
+  if (props.missing("concepts") && !model)
     return (
       <>
         <p className="note warn">The picture model's files weren't found. Your description stays here while you set them up.</p>
@@ -144,9 +146,10 @@ export function PictureForm(props: {
           </select>
         </label>
       )}
+      {modelPick}
       <label>
         Style
-        <select value={style} onChange={(e) => setStyle(e.target.value)}>
+        <select value={model ? "" : style} disabled={!!model} onChange={(e) => setStyle(e.target.value)}>
           {STYLES.map(([id, title]) => (
             <option key={id} value={id} disabled={!!id && noStyles}>
               {title}
@@ -174,7 +177,7 @@ export function PictureForm(props: {
             props.kind,
             tile
               ? { op: "tile", size: TILE_SIZES.includes(Number(size)) ? Number(size) : 512, ...(style ? { lora: style } : {}) }
-              : { op: "image", width: w, height: h, count, ...(style ? { lora: style } : {}), ...(cutout ? { cutout: true } : {}) },
+              : { op: "image", width: w, height: h, count, ...(model ? { workflow: model } : style ? { lora: style } : {}), ...(cutout ? { cutout: true } : {}) },
           )
         }
       >
@@ -707,6 +710,7 @@ export function tools2D(versions: Meta[], v: Meta, editor: boolean, kind?: strin
     pictures: brief,
     tile: brief,
     redraw: redrawable(v),
+    change: redrawable(v),
     pixelize: hasPicture && (v.step !== "pixelize" || !!parent),
     recolour: v.step === "pixelize",
     animate,
@@ -838,6 +842,11 @@ export function Actions2D(props: {
       {show("redraw") && redrawable(v) && (
         <section className="stack" id="redraw">
           <RedrawForm asset={props.asset} version={v} versions={props.versions} picked={props.picked} chain={props.chain} missing={props.missing} />
+        </section>
+      )}
+      {show("change") && redrawable(v) && (
+        <section className="stack" id="change">
+          <EditPicture asset={props.asset} version={v} picked={props.picked} chain={props.chain} />
         </section>
       )}
       {show("layers") && (layerable || v.step === "depth") && (

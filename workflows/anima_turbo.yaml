@@ -1,0 +1,13 @@
+title: Anima Turbo
+kind: image
+about: 10 steps. Anime and illustration only, not realism; small and fast.
+rank: 40
+set:
+  prompt: 5.text
+  seed: 11.seed
+  width: 7.width
+  height: 7.height
+models:
+- name: circlestone-labs/Anima
+  license: CircleStone Labs non-commercial licence
+  commercial: false

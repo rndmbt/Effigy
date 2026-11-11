@@ -132,6 +132,7 @@ STEP_LABELS = {
     "parts": "Parts",
     "pixelize": "Pixel art",
     "redraw": "Redrawn picture",
+    "edit": "Edited picture",
     "sprites": "Sprites",
 }
 PROFILES = {
@@ -274,7 +275,15 @@ def describe_steps(step: str = "") -> dict:
     if step:
         if step not in presets:
             raise ToolError(f"not_found: no step {step!r}, call describe_steps() for the list")
-        return {"step": step, "doc": doc(step), "presets": presets[step]}
+        out = {"step": step, "doc": doc(step), "presets": presets[step]}
+        if kind := {"concepts": "image", "edit": "edit"}.get(
+            step
+        ):  # the ids its `workflow` param takes
+            flows = [w for w in api("GET", "/api/workflows") if w["kind"] == kind]
+            out["workflows"] = [
+                {k: w[k] for k in ("id", "title", "about", "restricted", "missing")} for w in flows
+            ]
+        return out
     summary = re.search(r"^description:\s*(.+)$", GUIDE.read_text("utf-8"), re.MULTILINE)
     steps = {}
     for name, p in presets.items():

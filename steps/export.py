@@ -45,7 +45,7 @@ import trimesh
 import yaml
 from PIL import Image
 
-from steps import _engine2d
+from steps import _comfy, _engine2d
 from steps._blender import run_blender
 from steps._common import StepError, main, progress
 from steps._print import split_solid
@@ -72,11 +72,16 @@ PRINT = np.array([[1e3, 0, 0, 0], [0, 0, -1e3, 0], [0, 1e3, 0, 0], [0, 0, 0, 1]]
 
 def credits(names: list[str], rows: list[dict]) -> tuple[str, list[dict]]:
     """CREDITS.txt text and LICENSES.json rows for the components that touched the version chain."""
-    by_name = {r["name"]: r for r in rows}
+    by_name = {r["name"]: r for r in _comfy.rows()} | {r["name"]: r for r in rows}
     if missing := sorted(set(names) - by_name.keys()):
         raise StepError("failed", f"components without a licenses.yaml row: {missing}")
     used = [by_name[n] for n in sorted(set(names))]
     lines = [r["attribution"] for r in used if r.get("attribution")]
+    lines += [
+        f"Not for commercial use: {r['name']} ({r['license']})"
+        for r in used
+        if r.get("commercial") is False
+    ]
     return "".join(f"{line}\n" for line in lines), used
 
 
@@ -350,7 +355,9 @@ def run(op, in_dir, out_dir, params):
     meta = json.loads((Path(in_dir) / "meta.json").read_text(encoding="utf-8"))
     if meta.get("restricted") and not params.get("allow_restricted"):
         raise StepError(
-            "restricted", "restricted version (experimental engine); see IMPLEMENTATION MX1"
+            "restricted",
+            "restricted version: a component is not cleared for commercial use (the Licences panel names it); "
+            "allow_restricted exports it for non-commercial use",
         )
     outs = meta["outputs"]
     note = ""
@@ -386,7 +393,7 @@ def run(op, in_dir, out_dir, params):
     rows = yaml.safe_load((ROOT / "licenses.yaml").read_text(encoding="utf-8"))
     text, used = credits(meta["licenses"], rows)
     if meta.get("restricted"):
-        text += "RESTRICTED: made with an experimental engine whose licence limits use/territory.\n"
+        text += "RESTRICTED: a component's licence limits use (non-commercial, or by territory). Not for a commercial release.\n"
     (out / "CREDITS.txt").write_text(text, encoding="utf-8")
     licenses = {"restricted": bool(meta.get("restricted")), "components": used}
     (out / "LICENSES.json").write_text(json.dumps(licenses, indent=2), encoding="utf-8")

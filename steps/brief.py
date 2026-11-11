@@ -1,6 +1,7 @@
 """Prompt → brief.yaml from a category template (IMPLEMENTATION.md M10; no LLM yet).
 
-params: {"prompt": "dwarf blacksmith", "category": "character"|"prop"|"creature"|"posed"}
+params: {"prompt": "dwarf blacksmith", "category": "character"|"prop"|"creature"|"posed", "framing"?: the words
+added after the prompt instead of the category's template ("" adds nothing)}
 Templates encode what a "3D-ready" image is for TRELLIS.2 (research 07 §3). The 2D track's categories (research
 15, M50: "picture" (nothing added), "wallpaper", "background", "portrait", "icon", "item") frame a picture for `concepts` op `image`; "tile"
 (M54) a texture for `concepts` op `tile`.
@@ -81,7 +82,9 @@ def run(op, in_dir, out_dir, params):
     if not prompt or category not in TEMPLATES:
         raise StepError("bad_params", f"need a prompt and a category in {sorted(TEMPLATES)}")
     template = TEMPLATES[category]
-    if OWN_VIEW.search(prompt.lower()):  # its own view or camera: the template's go
+    if isinstance(params.get("framing"), str):  # the user's own words for it, as they are
+        template = params["framing"].strip()
+    elif OWN_VIEW.search(prompt.lower()):  # its own view or camera: the template's go
         template = ", ".join(
             p for p in template.split(", ") if "view" not in p and "camera" not in p
         )

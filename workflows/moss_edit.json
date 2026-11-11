@@ -1,0 +1,177 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "moss_image_sft_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3.5_9b_w4a8_gptq.safetensors",
+      "type": "moss_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2-vae_small.safetensors"
+    }
+  },
+  "12": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "11",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "13": {
+    "class_type": "PreviewImage",
+    "inputs": {
+      "images": [
+        "12",
+        0
+      ]
+    }
+  },
+  "20": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "effigy_input.png"
+    }
+  },
+  "21": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+      "image": [
+        "20",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 16
+    }
+  },
+  "22": {
+    "class_type": "GetImageSize",
+    "inputs": {
+      "image": [
+        "21",
+        0
+      ]
+    }
+  },
+  "7": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+      "width": [
+        "22",
+        0
+      ],
+      "height": [
+        "22",
+        1
+      ],
+      "batch_size": 1
+    }
+  },
+  "8": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "lora_name": "moss_image_edit_lora_rank_64_bf16.safetensors",
+      "strength_model": 1
+    }
+  },
+  "4": {
+    "class_type": "SkipLayerGuidanceDiTSimple",
+    "inputs": {
+      "model": [
+        "8",
+        0
+      ],
+      "double_layers": "",
+      "single_layers": "22",
+      "start_percent": 0,
+      "end_percent": 1
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "prompt": "",
+      "edit_format": "Moss-Image-Edit",
+      "image_strength": 1,
+      "images.image_0": [
+        "21",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "prompt": "nsfw, worst quality, bad anatomy, watermark, jpeg artifact",
+      "edit_format": "Moss-Image-Edit",
+      "image_strength": 1,
+      "images.image_0": [
+        "21",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "11": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "seed": 0,
+      "steps": 30,
+      "cfg": 4,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ],
+      "denoise": 1
+    }
+  }
+}

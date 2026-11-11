@@ -2288,3 +2288,14 @@ button.danger:hover {
   font-weight: 700;
   color: var(--text);
 }
+
+/* Edit picture: the version's pictures to choose from */
+.thumbs button {
+  padding: 3px;
+}
+.thumbs img {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}

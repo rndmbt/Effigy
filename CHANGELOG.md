@@ -6,6 +6,33 @@ milestone, is in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) §4.
 
 ## Unreleased
 
+### Pictures
+
+- **Choose the image model.** With ComfyUI set up, concept images and 2D pictures get an "Image model" list:
+  the built-in Z-Image Turbo, or a ComfyUI workflow. Shipped: Qwen-Image 2.1 Turbo, Krea 2 Turbo, MOSS-Image
+  and Anima Turbo (their model files are yours to download into the models folder; a model with missing files
+  is greyed out and says which).
+- **Edit picture.** A new tool on every picture: write what to change ("give him a horned helmet, keep the
+  rest") and get a new picture, which goes on to Remove background like any other. Shipped edit models:
+  Qwen-Image 2.1 Turbo and MOSS-Image with its edit LoRA.
+- **Prompt details.** Under the description: the words Effigy adds for the chosen kind, open to change (kept
+  per kind in your browser), a switch for the four candidates' variations, and the prompt the model gets.
+- **Your own workflows.** Export a workflow from ComfyUI in API format, put it with a short manifest in
+  `comfyui/workflows/`, and it appears in the list (`workflows/README.md`).
+- **Non-commercial models are allowed and labelled.** A result made with a model that is not cleared for
+  commercial use is marked restricted, and Licences names the model. Restricted models can now be exported
+  after you confirm non-commercial use; the export's `CREDITS.txt` carries the note.
+- One model on the graphics card at a time: Effigy starts its own ComfyUI for a workflow and stops it before
+  any other step loads a model. A run that pushed video memory into shared memory says so in its note.
+
+### For agents
+
+- `concepts`: `workflow` (an image workflow's id) for op `run` and op `image`; `variants: false` for op `run`.
+- `brief`: `framing`, the words added after the prompt instead of the category's template.
+- `edit` (new step): `{"prompt", "workflow", "key"?, "seed"?}` on any version with a picture.
+- `describe_steps("concepts")` and `describe_steps("edit")` list the workflow ids.
+- `export`: `allow_restricted: true` in `options` exports a restricted version for non-commercial use.
+
 ### Setup
 
 - Optional local ComfyUI installation with its own Python environment. Share Effigy's model folder

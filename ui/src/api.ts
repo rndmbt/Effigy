@@ -46,6 +46,17 @@ export type TextureMaterial = {
   can_generate: boolean; can_upscale: boolean;
 };
 export type TextureInventory = { model: boolean; mesh?: string; materials: TextureMaterial[]; rigged?: boolean; animated?: boolean; manifest?: Record<string, any> };
+/** A ComfyUI workflow offered as a model (steps/_comfy.py): `missing` the model files its graph names and the folders lack. */
+export type Workflow = {
+  id: string;
+  title: string;
+  kind: "image" | "edit";
+  about?: string;
+  restricted: boolean;
+  own: boolean;
+  missing: string[];
+  models: { name: string; license?: string; commercial?: boolean }[];
+};
 export type Presets = Record<string, Record<string, Record<string, unknown>>>;
 export type Model = {
   id: number;
@@ -165,6 +176,8 @@ export const api = {
   comfyUI: () => call<ComfyUIState>("GET", "/api/setup/comfyui"),
   setComfyUI: (config: ComfyUIConfig) => call<ComfyUIState>("POST", "/api/setup/comfyui", config),
   installComfyUI: () => call<{ job_id: string }>("POST", "/api/setup/comfyui/install"),
+  workflows: () => call<Workflow[]>("GET", "/api/workflows"),
+  framings: () => call<Record<string, string>>("GET", "/api/framings"),
   folder: () => call<Folder>("GET", "/api/setup/folder"),
   port: () => call<PortInfo>("GET", "/api/setup/port"),
   trash: () => call<TrashEntry[]>("GET", "/api/trash"),

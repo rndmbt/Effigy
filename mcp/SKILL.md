@@ -76,6 +76,17 @@ several (try two remeshes, keep both). `get_asset` shows the tree with labels as
 "category": "character"|"prop"|"creature"})`, `concepts` on the brief (4 candidate images, ranked; `look` them),
 `prep` on the concepts version with `{"pick": k}` (cut-out), then generate (below). Say what you want, not
 what you don't: "no end post" draws posts; "a section cut out of a long wall, cut off square" does not.
+The words the category adds are `brief`'s `framing` (your own instead, `""` for none); `concepts` with
+`{"variants": false}` draws all four from the same prompt.
+
+**Another image model, and edits (ComfyUI workflows).** `describe_steps("concepts")` and `describe_steps("edit")`
+list the workflow ids when ComfyUI is set up (`missing`: model files the owner has yet to download; `restricted`:
+a model not cleared for commercial use, so the result and everything made from it is restricted). `concepts` with
+`{"workflow": "<id>"}` draws the candidates (or op `image`'s pictures) with it. `run_step(asset, <a version with
+a picture>, "edit", {"prompt": "Give him a horned helmet. Keep the pose, the face and the plain background.",
+"workflow": "<an edit id>", "key": "cand_2"})` redraws a picture with that change (`key`: which candidate or
+picture, default the first); say what must stay, the model redraws all of it. `look` the result, then `prep` it.
+A workflow job stops the other models first and takes longer on its first run (ComfyUI starts, the model loads).
 
 **From a picture.** `import_file("<abs path>.png")` runs `prep` for you (cut-out). A character that will be
 rigged: `canon` on the prep version re-poses it to an A-pose first (`{"seed", "steps"}`), then `prep` on the result.
@@ -208,7 +219,9 @@ Check with `look(asset, version, clip="Walk")` (four frames of the clip).
 ship them. `to_folder` must be an existing absolute directory (e.g. `<project>/assets/models`); the files are copied
 into a new `<asset>_<profile>` folder inside it, and an existing folder is refused (choose another or have the
 owner remove it). The result lists the absolute paths. Export the **checked** version; a restricted version
-(Hunyuan experiments) is refused by the app.
+(a non-commercial model, a Hunyuan experiment, a file without a clean licence) is refused unless `options` has
+`"allow_restricted": true`: ask the owner first, the export is then for non-commercial use and says so in its
+`CREDITS.txt`.
 
 ## Do not
 

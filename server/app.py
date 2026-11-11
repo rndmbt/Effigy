@@ -437,19 +437,16 @@ def install_comfyui():
     return {"job_id": comfyui.install().id}
 
 
-@app.post("/api/setup/comfyui/start")
-def start_comfyui():
-    return comfyui.start()
+@app.get("/api/workflows")
+def workflows():
+    return comfyui.workflows()
 
 
-@app.post("/api/setup/comfyui/stop")
-def stop_comfyui():
-    return comfyui.stop()
+@app.get("/api/framings")
+def framings():
+    from steps.brief import TEMPLATES
 
-
-@app.get("/api/setup/comfyui/status")
-def comfyui_status():
-    return comfyui.request("/system_stats")
+    return TEMPLATES
 
 
 class Port(BaseModel):
@@ -567,7 +564,10 @@ def cleanup(body: Cleanup):
 
 @app.get("/api/licenses")
 def licenses():
-    return yaml.safe_load((ROOT / "licenses.yaml").read_text(encoding="utf-8"))
+    from steps import _comfy
+
+    rows = yaml.safe_load((ROOT / "licenses.yaml").read_text(encoding="utf-8"))
+    return rows + [r for r in _comfy.rows() if r["name"] not in {x["name"] for x in rows}]
 
 
 @app.get("/api/jobs/{job_id}")

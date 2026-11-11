@@ -191,7 +191,22 @@ def _env(budget: float | None = None) -> dict:
             "EFFIGY_GLTFPACK": str(gltfpack_install.gltfpack_exe()),
         }
         | _pin_gpu()
+        | _comfy_env()
     )
+
+
+def _comfy_env() -> dict:
+    """Where a step finds the running ComfyUI, and the video memory that was free before its models."""
+    from server import comfyui  # here: comfyui imports this module
+
+    if not comfyui.running():
+        return {}
+    return {"EFFIGY_COMFYUI": comfyui.url(), "EFFIGY_COMFYUI_FREE": str(comfyui.free0)}
+
+
+def _workflow(job: "Job") -> str | None:
+    """The ComfyUI workflow `job` draws with, if any: ComfyUI then holds the GPU instead of a resident worker."""
+    return (job.params.get("workflow") or None) if job.step in ("concepts", "edit") else None
 
 
 def _pin_gpu() -> dict:
@@ -331,9 +346,14 @@ def _resident(job: Job) -> bool:
     return bool(_worker) and _worker.key == _key(job) and _worker.proc.poll() is None
 
 
-def evict() -> None:
-    """Stop the resident worker (VRAM is freed when the process exits)."""
+def evict(comfy: bool = True) -> None:
+    """Stop the resident worker and ComfyUI (VRAM is freed when the process exits); `comfy` False: the
+    worker alone, for a job that runs through ComfyUI."""
     global _worker
+    if comfy:
+        from server import comfyui  # here: comfyui imports this module
+
+        comfyui.stop()
     if _worker:
         w, _worker = _worker, None
         _kill_tree(w.proc)  # and its Blender child, if a preview is rendering
@@ -495,7 +515,9 @@ def _rearm_idle() -> None:
     global _idle
     if _idle:
         _idle.cancel()
-    if _worker:
+    from server import comfyui  # here: comfyui imports this module
+
+    if _worker or comfyui.running():
         _idle = threading.Timer(IDLE_S, _evict_if_idle)
         _idle.daemon = True
         _idle.start()
@@ -551,7 +573,7 @@ def _refusal(step: str, params: dict, need: float | None, total: float, free: fl
 
 def _preflight(job: Job) -> dict | None:
     """Before a GPU job starts (after the eviction): set its budget, or refuse it (`_refusal`)."""
-    from server import machine  # here: machine imports install, which imports this module
+    from server import comfyui, machine  # here: both import this module (machine through install)
 
     if job.step in machine.SM_STEPS and (sm := machine.sm()) is not None and sm < machine.MIN_SM:
         return {
@@ -563,6 +585,12 @@ def _preflight(job: Job) -> dict | None:
     if need == 0 or not (v := _smi("memory.total", "memory.free")):
         return None  # nothing on the GPU, or no NVIDIA GPU to ask
     total, free = v[0] / 1024, v[1] / 1024
+    if _workflow(job):
+        # ComfyUI fits its models to the memory there is (weights it cannot hold stay in RAM), so nothing to
+        # refuse. The budget caps the step's own model (the gates' BiRefNet, after ComfyUI's are unloaded):
+        # what was free when ComfyUI started, since its models may be on the card right now
+        job.budget = presets.budget_gb(total, comfyui.free0 / 2**30)
+        return None
     if _resident(job):
         # nvidia-smi can't tell processes apart on Windows: the GPU shows the worker's own models plus other
         # programs'. Against the worker's idle baseline, the change since is other programs' (BE-006); a
@@ -601,6 +629,8 @@ def _oom_message(step: str, need: float | None, budget: float | None, message: s
 
 
 def _run_locked(job: Job) -> None:
+    from server import comfyui  # here: comfyui imports this module
+
     with GPU:
         with _state:
             if job.status == "cancelled":
@@ -611,14 +641,18 @@ def _run_locked(job: Job) -> None:
         out = None
         try:
             _log(job, f"start parent={job.parent} params={json.dumps(job.params)}")
-            if not (_light(job) or _resident(job)):
+            if name := _workflow(job):
+                evict(comfy=False)  # one model on the GPU: the resident worker goes, ComfyUI comes
+                comfyui.ready(name)
+                job.stop = lambda: (_kill_tree(job.proc), comfyui.interrupt())
+            elif not (_light(job) or _resident(job)):
                 evict()  # before the pre-flight reads the free VRAM and RAM
             if refused := _preflight(job):
                 reply = "ERROR", refused
             else:
                 out = library.new_version(job.asset_id, job.step)
                 in_dir = library.version_dir(job.asset_id, job.parent) if job.parent else None
-                run = _run_resident if job.step in SERVE else _run_oneshot
+                run = _run_resident if job.step in SERVE and not name else _run_oneshot
                 reply = run(job, in_dir, out) or (
                     "ERROR",
                     {"code": "failed", "message": "no RESULT"},
@@ -634,6 +668,8 @@ def _run_locked(job: Job) -> None:
         except Exception as e:  # noqa: BLE001 - a job must always end in a status
             reply = "ERROR", {"code": "failed", "message": f"{type(e).__name__}: {e}"}
         kind, payload = reply
+        if _workflow(job) and (kind != "RESULT" or job.status == "cancelled"):
+            comfyui.stop()  # a failed or cancelled run may have left models on the GPU: none stay
         with _state:
             # finishing is part of the job: a failure here ends in "failed", not in "running" for ever
             # (code review 2026-10-05); a cancelled job writes nothing (a brief's meta updates asset.json)

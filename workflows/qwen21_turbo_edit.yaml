@@ -1,0 +1,12 @@
+title: Qwen-Image 2.1 Turbo
+kind: edit
+about: 8 steps. Changes what you describe and keeps the rest; say what must stay.
+rank: 10
+set:
+  prompt: 5.prompt
+  seed: 10.noise_seed
+  image: 20.image
+models:
+- name: Qwen/Qwen-Image-2.1
+  license: Qwen research licence, non-commercial
+  commercial: false

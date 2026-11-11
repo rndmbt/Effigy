@@ -1,0 +1,13 @@
+title: Qwen-Image 2.1 Turbo
+kind: image
+about: 8 steps. Follows long descriptions closely, renders text, any style.
+rank: 10
+set:
+  prompt: 5.prompt
+  seed: 10.noise_seed
+  width: 6.width
+  height: 6.height
+models:
+- name: Qwen/Qwen-Image-2.1
+  license: Qwen research licence, non-commercial
+  commercial: false

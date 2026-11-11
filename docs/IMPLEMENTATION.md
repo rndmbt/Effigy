@@ -220,6 +220,7 @@ Fixed output names per step (the next step reads these names; don't invent other
 | `brief` | `brief.yaml` | copied into `asset.json.brief` |
 | `concepts` | `cand_<k>.png`, `scores.json` | `scores.json`: per candidate `{gates: {name: pass/fail/value}, rank}` |
 | `prep` | `image.png` (RGBA, BiRefNet alpha), `image_rgb.png`, `crop.json` | multi-view: `view_<k>.png` + `cameras.json` (Pixal3D `transforms.json` convention) |
+| `edit` | `image.png` | a picture redrawn from an instruction by a ComfyUI edit workflow (`{"prompt", "workflow", "key"?, "seed"?}`); `metrics.workflow`, `metrics.shared_gb`; restricted and `note` as the workflow's models say |
 | `trellis2` (generate) | `hi.glb`, `ovoxel.npz`, `preview.png` | `hi.glb` is in the **library frame**; `ovoxel.npz` in the **TRELLIS frame** with the transform in `meta.frame`; param `background` (`auto`/`black`/`grey`/`white`, behind the prep's cut-out `image.png`) → `metrics.background`, `metrics.dark_share` |
 | `trellis2` (texture) | `textured.glb` | input mesh keeps its UVs |
 | `clean` | `mesh.glb`, `report.json`; with `cleanup`: `hi_clean.ply` (output `hi_clean`) | watertight flag, components, holes filled; `level` (true \| false \| `"auto"`, default `"auto"` = true for a model with the generator's volume (`ovoxel`) up its chain, 2026-10-13): stood upright (`level_transform`: the floor levelled, the hull's or else the mesh's own lowest faces, else a box-like model's own axes; a post on its shaft when it has no floor or the floor is within 3° of the shaft), folded into `metrics.transform`, `metrics.levelled` = `{tilt_deg}`; `straighten` (bool, default false, 2026-10-11): the floor (the convex hull's largest downward plane) turned level (3–45° off) and a long footprint's axis turned onto X, before the re-ground, both folded into `metrics.transform`; `metrics.straightened` = `{tilt_deg, yaw_deg}`; a thin footprint (depth under 15 % of the length) is only turned, never levelled (2026-10-12: the fence leaned 18°); without a floor, or with one within 3° of it, a post over twice as tall as wide is stood on its shaft (2026-10-13); `press_to_floor` (bool, default false, 2026-10-13): a small part hanging just under the middle of a broad flat base (up to a tenth of the height) pressed flat onto it before the re-ground, `metrics.pressed` = `{vertices, depth_cm}`; `metrics.enclosed_dropped`: parts removed inside another (the rebuild's inner copy, bubbles); `drop_floating` (true \| false \| `"auto"`, default `"auto"` as `level`, 2026-10-13): with one part over 0.5 % of the surface, the parts under it lying over 1 % of the diagonal clear of it with their middle outside its convex hull dropped before the levelling, `metrics.dropped_parts` = `{parts, faces, surface_pct}`; `cleanup` (bool, default false, 2026-11-04; opt-in 2026-11-05: on a character it melted the face, and it keeps only the largest part): after the transform the model rebuilt as one solid (`solid_cleanup`: its voxel solid at `cleanup_resolution`, default 400, cracks up to ~2 voxels closed and the inside filled through openings, Blender's rounding, `_mesh.denoise_surface`, the largest part): `mesh.glb` that surface at the repaired face count, `hi_clean.ply` at full resolution for bake; `metrics.cleanup` = `{resolution, voxel_mm, filled_gap_cm, hi_faces, parts_dropped, volume_l, watertight, seconds}` (the rebuild alone leaves a generated model as a hollow double skin joined at its openings) |
@@ -321,6 +322,8 @@ All under `http://127.0.0.1:8000` (the port: Setup, App address, or EFFIGY_PORT;
 | GET | `/api/setup/comfyui` | → `{enabled, models, download_path, installed, installing}`; empty `models`: share the main folder; otherwise ComfyUI downloads use the second folder |
 | POST | `/api/setup/comfyui` | `{enabled, models?}` → same state; saves the optional installation and model folder choice |
 | POST | `/api/setup/comfyui/install` | → `{job_id}` (202), step `install_comfyui`; install the isolated backend without weights; existing job status/cancel endpoints apply |
+| GET | `/api/workflows` | → `[{id, title, kind: "image"\|"edit", about, restricted, own, missing: [model files the graph names and the model folders lack], models: [{name, license, commercial}]}]`, first the one to offer first; `[]` while ComfyUI is off or not installed |
+| GET | `/api/framings` | → `{category: the words `brief` adds after the prompt}` (the UI's Prompt details) |
 | GET | `/api/setup/blender` | → `{"start", "exe", "found"}` (2026-10-13): start the user's Blender when needed, which one; `found`, while none is chosen: the connected Blender's `bpy.app.binary_path` |
 | POST | `/api/setup/blender` | `{"start", "exe"}` → as GET; 400 `bad_path` when `exe` is not a `blender*` file, or `start` without one; saved in settings.json (`blender_start`, `blender_exe`) |
 | POST | `/api/assets/{id}/blender/pull` | `{"version"?}` → `{"version": "NNN_blender"}` (2026-10-12: with several versions of the asset open, `version` says which; else the one opened last, the note naming what else was open) |
@@ -3921,6 +3924,40 @@ without starting the service. No ComfyUI modules are imported into MIT code and 
 `server/comfyui.py` supplies configuration and a direct CLI launcher. An optional second model path
 owns ComfyUI downloads/caches; the main folder remains searchable. Native download paths and existing
 models are unchanged. Checks: `tests/test_comfyui.py`, `ui/tests/comfyui.spec.ts`.
+
+### ComfyUI workflows as image models
+
+A workflow is a pair of files (`workflows/README.md`): the graph in ComfyUI's API format and a manifest naming
+the inputs Effigy sets (`prompt`, `seed`, `width`, `height`, `image`) and the models the graph loads. `workflows/`
+holds the shipped ones, the ignored `comfyui/workflows/` the user's own. `steps/_comfy.py` is the client (stdlib
+HTTP: upload, `/prompt`, `/history`, `/view`, `/free`); nothing imports ComfyUI.
+
+- `concepts` (op `run` and op `image`) takes `workflow`: an `image` workflow draws instead of Z-Image-Turbo; the
+  gates, the cut-out and every later step are unchanged. `variants: false` drops the four candidates' suffixes;
+  `brief` takes `framing`, the words added after the prompt instead of the category's template.
+- `edit` (new step): a picture and an instruction through an `edit` workflow.
+- Licences: a result is `restricted` unless every model in the manifest says `commercial: true`, and its `note`
+  names the models that do not. The workflows' models join `/api/licenses` and an export's credits; `export` with
+  `allow_restricted` writes "Not for commercial use: …" into `CREDITS.txt` (the UI asks for a tick first).
+- One model on the GPU: a job with `workflow` evicts the resident worker and starts Effigy's own ComfyUI (a free
+  port, the GPU the steps use, `--vram-headroom 1`); it runs as a one-shot step. Another workflow restarts
+  ComfyUI; any other GPU step, the idle timer, a failed or cancelled job and the app's exit stop it (the process
+  is killed and its port awaited). A step that needs the GPU itself after the pictures (the gates' and the
+  cut-out's BiRefNet) first has ComfyUI unload and reads `/system_stats` until the free memory is back
+  (`_comfy.release`); a ComfyUI that keeps it fails the job. A backend that was killed leaves
+  `comfyui/running.json`; the next stop finds that instance and kills it.
+- Shared video memory: the step samples Windows' "GPU Adapter Memory" counters during a run and reports the
+  most it added as `metrics.shared_gb`; above 0.3 GB the version's `note` says so.
+
+Measured (RTX 5060 Ti 16 GB, Windows 11, 2.4 GB in use by the desktop; one prompt, 1024 x 1024): ComfyUI start
+10.7 s. Seconds for the first picture after a start / a further one with the same prompt, and the card's peak:
+Qwen-Image 2.1 Turbo 36.9 / 6.9 (15.6 GB, before `--vram-headroom`), MOSS-Image SFT 37.5 / 23.5 (13.2 GB),
+Krea 2 Turbo 24.7 / 13.1 (15.8 GB), Anima Turbo 11.3 / 6.8 (8.2 GB); edits: Qwen-Image 2.1 Turbo 19.2,
+MOSS-Image with the edit LoRA 41.7. Four concept candidates with Qwen-Image 2.1 Turbo through the app, gates
+included: 85.5 s with `--vram-headroom 1` (peak 14.7 GB), 130.3 s without (15.7 GB); every candidate has its
+own prompt, and the 8.7 GB text encoder and the model do not fit the card together. `shared_gb` stayed at
+0.19 or below in every run. Unload (`/free`) to the free memory being back: 0.5 s. Checks:
+`tests/test_workflows.py`, `ui/tests/workflows.spec.ts`.
 
 ## 5. Bench procedure (reference laptop)
 

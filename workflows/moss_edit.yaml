@@ -1,0 +1,18 @@
+title: MOSS-Image Edit
+kind: edit
+about: 30 steps, with the edit LoRA. Write "Change only the X to Y. Keep …".
+rank: 30
+set:
+  prompt: 5.prompt
+  seed: 11.seed
+  image: 20.image
+models:
+- name: OpenMOSS-Team/MOSS-Image-SFT
+  license: Apache-2.0
+  commercial: true
+- name: black-forest-labs/FLUX.2-small-decoder
+  license: Apache-2.0
+  commercial: true
+- name: chinoll/Moss-Image-Edit
+  license: not stated on its model card
+  commercial: false

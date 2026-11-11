@@ -155,6 +155,7 @@ const STEPS: Record<string, string> = {
   parts: "Parts",
   pixelize: "Pixel art",
   redraw: "Redrawn picture",
+  edit: "Edited picture",
   sprites: "Sprites",
 };
 
@@ -335,6 +336,14 @@ export const TOOLS: Tool[] = [
     needs: "a picture",
     ok: (c) => hasImage(c.v) && !hasGlb(c.v) && !["export", "concepts", "prep"].includes(c.v.step),
   },
+  {
+    id: "edit",
+    label: "Edit picture",
+    task: "reference",
+    what: "Change the picture with words: add, remove or restyle something, and keep the rest.",
+    needs: "a picture",
+    ok: (c) => hasImage(c.v) && !hasGlb(c.v) && c.v.step !== "export",
+  },
   { id: "generate", label: "Generate 3D", task: "generate", what: "Make a 3D model from this cut-out reference.", needs: "a cut-out reference", ok: (c) => c.v.step === "prep" },
   {
     id: "variation",
@@ -410,6 +419,7 @@ export const TOOLS: Tool[] = [
   // the 2D track (Actions2D's sections)
   { id: "pictures", label: "Pictures", task: "picture", kind: "2d", what: "Pictures from your description.", needs: "a description", ok: d2("pictures") },
   { id: "redraw", label: "Upscale or redraw", task: "picture", kind: "2d", what: "A bigger copy of the picture, or part of it drawn again.", needs: "a picture (not pixel art, sprites, a tile or layers)", ok: d2("redraw") },
+  { id: "change", label: "Edit picture", task: "picture", kind: "2d", what: "Change the picture with words: add, remove or restyle something, and keep the rest.", needs: "a picture (not pixel art, sprites, a tile or layers)", ok: d2("change") },
   { id: "pixelize", label: "Pixelize", task: "pixelize", kind: "2d", what: "Turn the picture into pixel art on a grid, with a palette of your choice.", needs: "a picture", ok: d2("pixelize") },
   { id: "recolour", label: "Recolour", task: "pixelize", kind: "2d", what: "Swap the palette of this pixel art.", needs: "pixel art", ok: d2("recolour") },
   { id: "animate", label: "Animate it", task: "pixelize", kind: "2d", what: "Make a 3D character from this picture, to animate and draw back as sprites.", needs: "a still picture of a character", ok: d2("animate") },

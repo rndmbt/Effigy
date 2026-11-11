@@ -1,0 +1,16 @@
+title: MOSS-Image
+kind: image
+about: '25 steps. Apache-2.0: results stay free to use. Good at text and layouts.'
+rank: 30
+set:
+  prompt: 5.text
+  seed: 11.seed
+  width: 7.width
+  height: 7.height
+models:
+- name: OpenMOSS-Team/MOSS-Image-SFT
+  license: Apache-2.0
+  commercial: true
+- name: black-forest-labs/FLUX.2-small-decoder
+  license: Apache-2.0
+  commercial: true

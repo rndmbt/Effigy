@@ -1,6 +1,9 @@
 """brief → N candidate images, gated and ranked (IMPLEMENTATION.md M10). Needs the GPU (Z-Image-Turbo).
 
-op run: params {"n": 4, "seed": int, "steps": 9}. Outputs cand_<k>.png + scores.json (research 07 §3 gates).
+op run: params {"n": 4, "seed": int, "steps": 9, "variants": true (false: every candidate from the brief's prompt as it
+is, without the four suffixes)}. Outputs cand_<k>.png + scores.json (research 07 §3 gates).
+`workflow` (op run and op image): the id of a ComfyUI image workflow (steps/_comfy.py) that draws the pictures
+instead of Z-Image-Turbo; `steps`, `lora` and op tile stay Z-Image's. Its models' licences ride on the result.
 op image (the 2D track, research 15 §5.2, M50): pictures of any aspect, no gates: params
   prompt: the text (default: the parent brief's prompt_full; one of the two is needed)
   width, height: multiples of 64 from 256 to 2048 (default 1024 × 1024; 1920 × 1088 is 16:9)
@@ -26,7 +29,7 @@ import torch
 import yaml
 from PIL import Image
 
-from steps import _birefnet, _pixel
+from steps import _birefnet, _comfy, _pixel
 from steps._common import StepError, main, progress
 from steps._image import gates, rank
 
@@ -132,6 +135,7 @@ def _image_params(in_dir, params) -> dict:
         "lora": params.get("lora"),
         "lora_scale": params.get("lora_scale", 1.0),
         "cutout": params.get("cutout", False),
+        "workflow": params.get("workflow"),
     }
     ok = (
         bool(p["prompt"])
@@ -149,12 +153,14 @@ def _image_params(in_dir, params) -> dict:
         and isinstance(p["lora_scale"], int | float)
         and 0 < p["lora_scale"] <= 2
         and isinstance(p["cutout"], bool)
+        and not (p["workflow"] and p["lora"])  # the styles are Z-Image LoRAs
     )
     if not ok:
         raise StepError(
             "bad_params",
             f"image: a prompt (or a brief parent); width and height multiples of 64 from 256 to 2048; count 1-4; "
-            f"steps 1-50; lora one of {sorted(STYLES)} or none, lora_scale in (0, 2]; cutout true or false",
+            f"steps 1-50; lora one of {sorted(STYLES)} or none (and none with a workflow), lora_scale in (0, 2]; "
+            "cutout true or false",
         )
     return p
 
@@ -166,6 +172,8 @@ def _tile_params(in_dir, params) -> dict:
     if not (isinstance(mend, int | float) and 0.3 <= mend <= 1):
         raise StepError("bad_params", "tile: mend from 0.3 to 1")
     extra = {"width": size, "height": size, "count": 1, "cutout": False}
+    if params.get("workflow"):
+        raise StepError("bad_params", "tile: the seams are mended by Z-Image, so no workflow")
     rest = {k: v for k, v in params.items() if k not in ("size", "mend")}
     return _image_params(in_dir, rest | extra) | {"mend": mend}
 
@@ -225,9 +233,9 @@ def _grid(images: list[Image.Image], height: int = 384) -> Image.Image:
     return out
 
 
-def _image(in_dir, out: Path, params, tile: bool = False) -> dict:
-    p = _tile_params(in_dir, params) if tile else _image_params(in_dir, params)
-    t0 = time.time()
+def _zimage(p: dict, tile: bool) -> tuple[list[Image.Image], list[dict], list[str], float | None]:
+    """The pictures from the resident Z-Image-Turbo: (images, models, licenses, a tile's seam ratio before the mend)."""
+    before = None
     pipe = _pipeline()
     style = STYLES.get(p["lora"]) if p["lora"] else None
     loaded = False
@@ -285,6 +293,22 @@ def _image(in_dir, out: Path, params, tile: bool = False) -> dict:
     if style:
         models.append({"id": style[0], "revision": style[1]})
         licenses.append(style[0])
+    return images, models, licenses, before
+
+
+def _image(in_dir, out: Path, params, tile: bool = False) -> dict:
+    p = _tile_params(in_dir, params) if tile else _image_params(in_dir, params)
+    t0, extra = time.time(), {}
+    if p["workflow"]:
+        seeds = [p["seed"] + k for k in range(p["count"])]
+        images, extra = _comfy.generate(
+            p["workflow"], "image", p["prompt"], seeds, p["width"], p["height"]
+        )
+        models, licenses = extra.pop("models"), extra.pop("licenses")
+        if p["cutout"]:
+            _comfy.release()  # BiRefNet next: ComfyUI's models leave the GPU first
+    else:
+        images, models, licenses, before = _zimage(p, tile)
     if p["cutout"]:
         progress(0.92, "cut-out")
         model = _birefnet.load()
@@ -308,9 +332,10 @@ def _image(in_dir, out: Path, params, tile: bool = False) -> dict:
     images[0].save(out / "image.png")
     _grid(images).save(out / "preview.png")
     peak = torch.cuda.max_memory_allocated() / 2**30 if torch.cuda.is_available() else 0.0
-    return {
+    return extra | {
         "outputs": outputs | {"image": "image.png", "preview": "preview.png"},
-        "metrics": {
+        "metrics": extra.get("metrics", {})
+        | {
             "seconds": round(time.time() - t0, 1),
             "peak_vram_gb": round(peak, 2),
             "seed": p["seed"],
@@ -356,21 +381,9 @@ def _tile_result(tile: Image.Image, before: float, out: Path, p, seconds, models
     }
 
 
-def run(op, in_dir, out_dir, params):
-    if op in ("image", "tile"):
-        return _image(in_dir, Path(out_dir), params, tile=op == "tile")
-    if op != "run":
-        raise StepError(
-            "bad_params", f"op {op!r}: run (concept candidates), image (pictures) or tile"
-        )
-    if not in_dir or not (Path(in_dir) / "brief.yaml").is_file():
-        raise StepError("missing_input", "concepts needs a brief version")
-    brief = yaml.safe_load((Path(in_dir) / "brief.yaml").read_text(encoding="utf-8"))
-    n, seed = params.get("n", 4), params.get("seed", random.randrange(2**31))
-    t0, out = time.time(), Path(out_dir)
-    pipe = _pipeline()
-    suffixes = variants(brief.get("category", "prop"))
-    prompts = {k: brief["prompt_full"] + suffixes[k % len(suffixes)] for k in range(n)}
+def _candidates(prompts: dict[int, str], seed: int, steps: int, out: Path) -> None:
+    """cand_<k>.png from the resident Z-Image-Turbo."""
+    pipe, n = _pipeline(), len(prompts)
     # ~4B text encoder + ~6B DiT don't fit together under 14.5 GB: encode every prompt once with the DiT
     # off the card, then the DiT on the GPU for all images (model offload swapped both per image: ~60 s each)
     progress(0.05, "encoding prompts")
@@ -389,7 +402,7 @@ def run(op, in_dir, out_dir, params):
             prompt_embeds=[embeds[k]],
             height=1024,
             width=1024,
-            num_inference_steps=params.get("steps", 9),
+            num_inference_steps=steps,
             guidance_scale=0.0,  # Turbo is distilled without CFG
             generator=torch.Generator("cpu").manual_seed(seed + k),
         ).images[0]
@@ -397,6 +410,36 @@ def run(op, in_dir, out_dir, params):
         progress(0.1 + 0.8 * (k + 1) / n, f"candidate {k + 1}/{n}")
     pipe.transformer.to("cpu")  # resident: the card is free for the gates and the next steps
     torch.cuda.empty_cache()
+
+
+def run(op, in_dir, out_dir, params):
+    if op in ("image", "tile"):
+        return _image(in_dir, Path(out_dir), params, tile=op == "tile")
+    if op != "run":
+        raise StepError(
+            "bad_params", f"op {op!r}: run (concept candidates), image (pictures) or tile"
+        )
+    if not in_dir or not (Path(in_dir) / "brief.yaml").is_file():
+        raise StepError("missing_input", "concepts needs a brief version")
+    brief = yaml.safe_load((Path(in_dir) / "brief.yaml").read_text(encoding="utf-8"))
+    n, seed = params.get("n", 4), params.get("seed", random.randrange(2**31))
+    t0, out, extra = time.time(), Path(out_dir), {}
+    suffixes = variants(brief.get("category", "prop")) if params.get("variants", True) else [""]
+    prompts = {k: brief["prompt_full"] + suffixes[k % len(suffixes)] for k in range(n)}
+    if params.get("workflow"):
+        images, extra = _comfy.generate(
+            params["workflow"],
+            "image",
+            list(prompts.values()),
+            [seed + k for k in range(n)],
+            1024,
+            1024,
+        )
+        for k, image in enumerate(images):
+            image.convert("RGB").save(out / f"cand_{k}.png")
+        _comfy.release()  # the gates' BiRefNet next: ComfyUI's models leave the GPU first
+    else:
+        _candidates(prompts, seed, params.get("steps", 9), out)
 
     progress(0.92, "gates")
     model = _birefnet.load()
@@ -410,18 +453,17 @@ def run(op, in_dir, out_dir, params):
     (out / "scores.json").write_text(json.dumps(ranked, indent=2), encoding="utf-8")
     peak = torch.cuda.max_memory_allocated() / 2**30 if torch.cuda.is_available() else 0.0
     outputs = {f"cand_{k}": f"cand_{k}.png" for k in range(n)} | {"scores": "scores.json"}
-    return {
+    drew = extra.pop("models", [{"id": MODEL, "revision": REVISION}])
+    return extra | {
         "outputs": outputs,
-        "metrics": {
+        "metrics": extra.get("metrics", {})
+        | {
             "seconds": round(time.time() - t0, 1),
             "peak_vram_gb": round(peak, 2),
             "seed": seed,
         },
-        "models": [
-            {"id": MODEL, "revision": REVISION},
-            {"id": _birefnet.MODEL, "revision": _birefnet.REVISION},
-        ],
-        "licenses": [MODEL, _birefnet.MODEL],
+        "models": [*drew, {"id": _birefnet.MODEL, "revision": _birefnet.REVISION}],
+        "licenses": [*extra.get("licenses", [MODEL]), _birefnet.MODEL],
     }
 
 

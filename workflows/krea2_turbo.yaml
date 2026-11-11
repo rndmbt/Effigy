@@ -1,0 +1,13 @@
+title: Krea 2 Turbo
+kind: image
+about: 8 steps. A photographic, art-directed look.
+rank: 20
+set:
+  prompt: 5.text
+  seed: 11.seed
+  width: 7.width
+  height: 7.height
+models:
+- name: krea/Krea-2-Turbo
+  license: Krea 2 community licence, read it before any commercial use
+  commercial: false
