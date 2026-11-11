@@ -7,6 +7,7 @@ command -v uv >/dev/null || { echo "uv not found: install it from https://docs.a
 uv sync --frozen
 UV_PROJECT_ENVIRONMENT=.venv-ml uv sync --frozen --group ml  # steps' venv; a no-op once synced
 uv run python -m server.blender_install  # pinned Blender, first run only
+uv run python -m server.uvgami_install
 uv run python -m server.gltfpack_install  # pinned gltfpack (LODs, web profile), first run only
 # Optional backend failure must not prevent opening Setup to retry or disable it.
 uv run python -m server.comfyui_install --if-enabled >> run.log 2>&1 || printf '%s\n' 'Optional ComfyUI setup failed. Open Setup to retry or disable it. Details in run.log.' >&2

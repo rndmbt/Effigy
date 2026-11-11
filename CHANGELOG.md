@@ -6,6 +6,10 @@ milestone, is in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) §4.
 
 ## Unreleased
 
+### UVs
+
+- UVgami (OptCuts) is now the default UV unwrapper, producing fewer islands and shorter seams. CuMesh remains available with `unwrapper: "cumesh"`.
+
 ### Pictures
 
 - **Choose the image model.** With ComfyUI set up, concept images and 2D pictures get an "Image model" list:
@@ -88,6 +92,7 @@ Live checks on the reference NVIDIA laptop covered standalone and animated-model
 from the external model drive, and preservation of animated geometry in Blender. Generative enhancement and
 retexturing reuse the existing AI steps; their new wrappers have regression tests, with broader visual assessment
 still ongoing. No new model dependencies were added.
+
 
 ## 0.3.0 (2026-11-05)
 

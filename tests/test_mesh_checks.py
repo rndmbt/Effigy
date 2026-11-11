@@ -107,7 +107,7 @@ def test_clean_remesh_uv_validate_chain(tmp_path, monkeypatch):
     np.testing.assert_allclose((cv.min(0) + cv.max(0))[[0, 2]] / 2, [0, 0], atol=1e-6)
     r, res = step(remesh, "030_remesh", c, {"faces": 100})
     assert res["metrics"]["faces"] == 12  # already under budget: untouched
-    u, res = step(uv, "040_uv", r, {})
+    u, res = step(uv, "040_uv", r, {"unwrapper": "cumesh"})
     assert res["metrics"]["islands"] == 12 and read_glb(u / "mesh.glb")[2] is not None
     _, res = step(validate, "050_validate", u, {})
     items = json.loads((tmp_path / "050_validate" / "checklist.json").read_text())["items"]
@@ -1029,3 +1029,18 @@ def test_clean_rebuilds_a_solid_only_when_asked(tmp_path, monkeypatch):
         ) is rebuilt
     with pytest.raises(StepError, match="cleanup"):
         clean.run("run", str(src), str(out), {"cleanup": "auto"})
+
+
+def test_uv_refuses_an_unknown_unwrapper_and_names_uvgamis_installer(tmp_path, monkeypatch):
+    """`unwrapper`: cumesh or uvgami; uvgami not installed is `missing_input` naming its installer (no download)."""
+    write_glb(tmp_path / "in.glb", *_ring_with((0.8, 0, 0)))
+    src = version(tmp_path / "010_remesh", tmp_path / "in.glb")
+    monkeypatch.setenv("EFFIGY_UVGAMI", str(tmp_path / "none"))
+    for params, code in (
+        ({"unwrapper": "xatlas"}, "bad_params"),
+        ({"unwrapper": "uvgami"}, "missing_input"),
+    ):
+        with pytest.raises(StepError) as e:
+            uv.run("run", str(src), str(tmp_path / "out"), params)
+        assert e.value.code == code
+    assert "server.uvgami_install" in str(e.value)
