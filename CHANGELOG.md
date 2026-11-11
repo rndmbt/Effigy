@@ -15,6 +15,13 @@ milestone, is in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) §4.
 - The raw material volume and raw mesh are preserved alongside the repaired high-poly normal source, so
   Prepare can bake materials from the original surface and normals from the repaired one. Geometry and UV
   reports accompany generation. Repair may close intentional openings or soften detail; inspect the result.
+- **No more voxel steps on the repaired high-poly.** The watertight rebuild used to sit half a voxel off the
+  generated surface, leaving a staircase pattern on flat panels that showed up in the normal map and the
+  ambient occlusion of every simplified model. Its grid now fits the model, and the rebuild is fitted back
+  onto the generated surface without folding it: still closed, no holes, about 7 seconds more.
+- **Ambient occlusion from the high-poly.** When the chain has a cleaned high-poly surface (every ComfyUI
+  generation, or Clean's rebuild), the baked AO is cast from it: contact shadows in grooves and under rims,
+  and no dark blotches on thin cloth whose two sides cross in the simplified mesh.
 - Setup provides the converted ComfyUI 3D checkpoints as separate optional downloads in its selected model folder.
 
 ### Materials and texture detail
@@ -31,6 +38,16 @@ milestone, is in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) §4.
   choices. Existing generated meshes are not changed.
 - Setup includes the pinned Learned PBR model download; it shares the selected ComfyUI model store when one
   is configured. No weights are downloaded during estimation.
+
+### Prepare
+
+- **Turn and move.** A new Prepare tool turns the model about X, Y and Z and moves it, shown live in the
+  viewer, then stands it on the ground; Apply makes a new version, textures unchanged. For a model whose feet
+  came out tilted, or one facing the wrong way.
+- **Hard edges keep their shading.** Normals are no longer averaged across edges sharper than 90° (the rim of
+  a thin plate or a hem): such vertices get one normal per side, so no triangle shades as if it faced away.
+- **Normal maps survive skinning and animation.** Rigged and animated models keep the tangents their normal
+  map was baked with; before, the viewer rebuilt its own and the shading changed once the model was rigged.
 
 ### For agents
 

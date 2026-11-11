@@ -96,3 +96,64 @@ def rotate(src: Path, dst: Path, R: np.ndarray, shift=(0.0, 0.0, 0.0), scale=1.0
             a[:, :3] = a[:, :3] / sc if key == "NORMAL" else a[:, :3] * sc
             a[:, :3] /= np.maximum(np.linalg.norm(a[:, :3], axis=1, keepdims=True), 1e-12)
     write(dst, doc, blob)
+
+
+def _key(doc: dict, blob: bytearray, att: dict) -> np.ndarray:
+    """Position, UV and normal / 100 per vertex: Blender's normals (up to 0.4° off) move it under 7e-5 (copy_tangents
+    takes up to 5e-4), the other side of a hard edge (normals tens of degrees apart) about 1e-2.
+    """
+    p, uv, n = (
+        accessor(doc, blob, att[k]).astype(np.float64) for k in ("POSITION", "TEXCOORD_0", "NORMAL")
+    )
+    return np.hstack([p, uv, n / 100])
+
+
+def copy_tangents(src: Path, dst: Path) -> int:
+    """`src`'s TANGENT written into each primitive of `dst` that has none, vertex by vertex matched on position,
+    UV and normal (a hard edge's two copies differ only in it; Blender writes normals a few 0.1° off) (Blender's
+    skinning and clip exports drop it; without it a viewer builds its own frame and the baked normal map shades
+    differently). A primitive with a vertex that has no match is left alone.
+    Returns how many primitives got one."""
+    from scipy.spatial import cKDTree
+
+    sd, sb = read(src)
+    keys, tangents = [], []
+    for mesh in sd.get("meshes", []):
+        for prim in mesh["primitives"]:
+            att = prim["attributes"]
+            if {"POSITION", "TEXCOORD_0", "NORMAL", "TANGENT"} <= set(att):
+                keys.append(_key(sd, sb, att))
+                tangents.append(accessor(sd, sb, att["TANGENT"]).astype(np.float32))
+    if not keys:
+        return 0
+    tree, tangents = cKDTree(np.concatenate(keys)), np.concatenate(tangents)
+    doc, blob = read(dst)
+    done = 0
+    for mesh in doc.get("meshes", []):
+        for prim in mesh["primitives"]:
+            att = prim["attributes"]
+            if "TANGENT" in att or not {"POSITION", "TEXCOORD_0", "NORMAL"} <= set(att):
+                continue
+            gap, at = tree.query(_key(doc, blob, att))
+            if len(gap) and gap.max() > 5e-4:
+                continue
+            data = np.ascontiguousarray(tangents[at], "<f4").tobytes()
+            blob += b"\0" * (-len(blob) % 4)
+            doc["bufferViews"].append(
+                {"buffer": 0, "byteOffset": len(blob), "byteLength": len(data), "target": 34962}
+            )
+            doc["accessors"].append(
+                {
+                    "bufferView": len(doc["bufferViews"]) - 1,
+                    "componentType": 5126,
+                    "count": len(at),
+                    "type": "VEC4",
+                }
+            )
+            att["TANGENT"] = len(doc["accessors"]) - 1
+            blob += data
+            done += 1
+    if done:
+        doc["buffers"][0]["byteLength"] = len(blob)
+        write(dst, doc, blob)
+    return done

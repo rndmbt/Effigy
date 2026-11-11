@@ -2228,6 +2228,64 @@ function ActiveJob(props: { job: Job; onCancel: (id: string) => void }) {
 
 // the action panel: one primary action per checkpoint (docs/archive/UI_REDESIGN_PROPOSAL.md §6 decision table)
 // M23: the generated picture projected onto the texture; a project version shows what it did
+/** Turn and move by hand: the transform step, previewed on the model in the viewer while the numbers change. */
+function TransformPanel(props: { asset: string; version: Meta; chain: Chain }) {
+  const [turn, setTurn] = useState<[number, number, number]>([0, 0, 0]); // degrees about X, then Y, then Z
+  const [move, setMove] = useState<[number, number, number]>([0, 0, 0]); // centimetres
+  const [ground, setGround] = useState(true);
+  const [busy, run] = useBusy();
+  const moveM = move.map((x) => x / 100) as [number, number, number];
+  const changed = turn.some((x) => x !== 0) || move.some((x) => x !== 0);
+  useEffect(() => {
+    window.__viewer?.previewMove(changed || !ground ? turn : null, moveM, ground);
+  });
+  useEffect(() => () => window.__viewer?.previewMove(null), []);
+  const set = (which: "turn" | "move", i: number, value: string) => {
+    const x = Number(value);
+    if (!Number.isFinite(x)) return;
+    const next = [...(which === "turn" ? turn : move)] as [number, number, number];
+    next[i] = x;
+    (which === "turn" ? setTurn : setMove)(next);
+  };
+  const axes = ["X", "Y", "Z"];
+  return (
+    <section id="transform" className="stack">
+      <p className="muted">The model turns in the view as you change the numbers. Apply makes a new version; textures stay as they are.</p>
+      {axes.map((a, i) => (
+        <label key={`turn-${a}`}>
+          Turn about {a} (°)
+          <span className="row">
+            <input type="range" min={-180} max={180} step={0.5} value={turn[i]} aria-label={`Turn about ${a} slider`} onChange={(e) => set("turn", i, e.target.value)} />
+            <input type="number" min={-180} max={180} step={0.5} value={turn[i]} onChange={(e) => set("turn", i, e.target.value)} />
+          </span>
+        </label>
+      ))}
+      <small className="muted">X tips it forward or back (feet pointing up: turn about X), Z tips it to the side, Y turns it round.</small>
+      {axes.map((a, i) => (
+        <label key={`move-${a}`}>
+          Move along {a} (cm)
+          <input type="number" step={0.5} value={move[i]} onChange={(e) => set("move", i, e.target.value)} />
+        </label>
+      ))}
+      <label className="check">
+        <input type="checkbox" checked={ground} onChange={(e) => setGround(e.target.checked)} /> Stand it on the ground (its lowest point at zero, centred)
+      </label>
+      <span className="row">
+        <button
+          className="primary"
+          disabled={busy || (!changed && !ground)}
+          onClick={() => run(() => props.chain(props.asset, props.version.version, [["transform", { rotate_deg: turn, translate_m: moveM, ground }]]))}
+        >
+          Apply
+        </button>
+        <button disabled={busy || !changed} onClick={() => (setTurn([0, 0, 0]), setMove([0, 0, 0]))}>
+          Reset
+        </button>
+      </span>
+    </section>
+  );
+}
+
 function FacePanel(props: { asset: string; version: Meta; chain: Chain }) {
   const [busy, run] = useBusy();
   const [region, setRegion] = useState("head");
@@ -2695,6 +2753,8 @@ function ToolBody(props: {
       const cap = RECIPE.find(([s]) => s === tool)![1].replace(/^./, (c) => c.toUpperCase());
       return <PrepareForm key={tool} {...props} from="" only={tool} button={cap} />;
     }
+    case "transform":
+      return <TransformPanel key={v.version} asset={props.asset} version={v} chain={props.chain} />;
     case "face":
       return <FacePanel asset={props.asset} version={v} chain={props.chain} />;
     case "detail":

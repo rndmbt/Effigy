@@ -1044,3 +1044,41 @@ def test_uv_refuses_an_unknown_unwrapper_and_names_uvgamis_installer(tmp_path, m
             uv.run("run", str(src), str(tmp_path / "out"), params)
         assert e.value.code == code
     assert "server.uvgami_install" in str(e.value)
+
+
+def test_normals_split_at_hard_edges_and_stay_smooth_elsewhere():
+    from steps._mesh import smooth_normals, split_creases
+
+    v, f = cube()
+    sv, sf, _ = split_creases(v, f)
+    assert len(sv) == 24  # each corner once per side: 90° edges are hard
+    faces = trimesh.Trimesh(sv, sf, process=False).face_normals
+    assert np.allclose((smooth_normals(sv, sf)[sf] * faces[:, None]).sum(2), 1)
+    s = trimesh.creation.icosphere(3)
+    assert len(split_creases(s.vertices, s.faces)[0]) == len(s.vertices)
+    plate = (
+        trimesh.creation.box((1, 1, 0.001)).subdivide().subdivide()
+    )  # its rim: front and back meet
+    sv, sf, _ = split_creases(plate.vertices, plate.faces)
+    m = trimesh.Trimesh(sv, sf, process=False)
+    assert (smooth_normals(sv, sf)[sf] * m.face_normals[:, None]).sum(2).min() > 0.99
+    assert np.allclose(smooth_normals(sv, sf), smooth_normals(*split_creases(sv, sf)[:2]))
+
+
+@pytest.mark.skipif(
+    not __import__("importlib").util.find_spec("cumesh"), reason="needs CuMesh and a GPU"
+)
+def test_fit_to_surface_takes_a_rebuild_back_onto_the_surface():
+    from steps._mesh import fit_to_surface
+
+    s = trimesh.creation.icosphere(5)
+    near = trimesh.creation.icosphere(4)
+    off = near.vertices * (
+        1.01 + 0.004 * np.sin(40 * near.vertices[:, 1:2])
+    )  # half a cell out, stepped
+    v, info = fit_to_surface(off, near.faces, s.vertices, s.faces, cell=0.02)
+    r = np.linalg.norm(v, axis=1)
+    assert abs(r - 1).max() < 0.004 and info["fit_missed"] == 0
+    assert (trimesh.Trimesh(v, near.faces, process=False).face_normals * v[near.faces].mean(1)).sum(
+        1
+    ).min() > 0

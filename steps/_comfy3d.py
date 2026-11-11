@@ -29,11 +29,10 @@ def graph(src: Path, p: dict) -> tuple[dict, dict]:
     g["output"]["inputs"]["token"] = uuid.uuid4().hex
     for sampler in ("3", "18", "23", "12"):  # structure, shape, upsampled shape, materials
         g[sampler]["inputs"].update(seed=int(p["seed"]), steps=int(p["steps"]))
-    g["186"]["inputs"]["target_face_count"] = int(p["faces"])
     g["241"]["inputs"].update(
         {
             "resolution": int(p.get("repair_resolution", 768)),
-            "sign_mode.fill": float(p.get("repair_fill", 20)),
+            "fill": float(p.get("repair_fill", 20)),
             "smooth_iters": int(p.get("repair_smooth", 2)),
         }
     )
@@ -134,7 +133,15 @@ def run(in_dir, out_dir, p: dict) -> dict:
     from steps import bake
     from steps._bake import write_glb as write_textured
     from steps._blender import BlenderError, run_blender
-    from steps._mesh import mesh_report, smooth_normals, uv_report, write_glb
+    from steps._mesh import (
+        fit_to_surface,
+        mesh_report,
+        smooth_normals,
+        split_creases,
+        uv_report,
+        write_glb,
+    )
+    from steps.remesh import _cumesh_simplify
     from steps.trellis2 import WEIGHTS
     from steps.uv import _uvgami
 
@@ -142,6 +149,13 @@ def run(in_dir, out_dir, p: dict) -> dict:
     arrays, info = sample(Path(in_dir), p)
     raw_v, raw_f = arrays["raw_vertices"], arrays["raw_faces"]
     hi_v, hi_f = arrays["repaired_vertices"], arrays["repaired_faces"]
+    # the rebuild back onto the generator's surface (no voxel steps), its cell as comfy_nodes' EffigyRemesh's
+    progress(0.55, "fitting the watertight rebuild back onto the generated surface")
+    res = int(p.get("repair_resolution", 768))
+    cell = (res + 3) / res * 1.02 * float(np.ptp(raw_v, 0).max()) / res
+    repaired = mesh_report(hi_v, hi_f)
+    hi_v, fit = fit_to_surface(hi_v, hi_f, raw_v, raw_f, cell)
+    mesh_v, mesh_f = _cumesh_simplify(hi_v, hi_f, int(p["faces"]), True)
     frame = trellis_to_library(hi_v.min(0), hi_v.max(0), float(p["height_m"]), np.eye(4))
     save_ovoxel(
         out / "ovoxel.npz", arrays["coords"], arrays["attrs"], LAYOUT, int(arrays["resolution"])
@@ -152,8 +166,9 @@ def run(in_dir, out_dir, p: dict) -> dict:
     )
     geometry = {
         "raw": mesh_report(raw_v, raw_f),
-        "repaired": mesh_report(hi_v, hi_f),
-        "final": mesh_report(arrays["mesh_vertices"], arrays["mesh_faces"]),
+        "repaired": repaired,
+        "fitted": mesh_report(hi_v, hi_f) | fit,
+        "final": mesh_report(mesh_v, mesh_f),
     }
     (out / "geometry_report.json").write_text(json.dumps(geometry, indent=2), encoding="utf-8")
 
@@ -166,7 +181,7 @@ def run(in_dir, out_dir, p: dict) -> dict:
         shutil.copy(out / "ovoxel.npz", source)
         shutil.copy(out / "hi_trellis.ply", source)
         trimesh.Trimesh(hi_v, hi_f, process=False).export(source / "hi_clean.ply")
-        write_glb(source / "mesh.glb", arrays["mesh_vertices"], arrays["mesh_faces"])
+        write_glb(source / "mesh.glb", mesh_v, mesh_f)
         _version(
             source,
             "trellis2",
@@ -203,6 +218,7 @@ def run(in_dir, out_dir, p: dict) -> dict:
         maps = [k for k in ("basecolor", "orm", "normal") if k in result["outputs"]]
         for key in maps:
             shutil.copy(baked / result["outputs"][key], out / f"{key}.png")
+        v, f, uv = split_creases(v, f, uv)  # as bake split them: the normal map's frame
         write_textured(
             out / "hi.glb",
             v,

@@ -177,19 +177,81 @@ def textured(glb) -> bool:
         return bool(json.loads(f.read(n)).get("images"))
 
 
-def smooth_normals(vertices, faces) -> np.ndarray:
-    """Smooth vertex normals [V,3]: area-weighted face normals summed per position, so the copies of a vertex
-    split at a UV seam share one (no shading crease there); a vertex of no face gets +Y."""
+def _corner_groups(vertices, faces, crease: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(smoothing group per face corner [F*3], face normals with length 2 × area [F,3], position id per
+    vertex [V]): the corners round one
+    position (UV-seam copies welded) join across every edge their two faces share at an angle under `crease`
+    degrees, so a thin plate's rim, front and back, keeps two normals instead of one pointing nowhere; a corner
+    its group's normal points over 60° away from keeps its face's own."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
     v, f = np.asarray(vertices, np.float64), np.asarray(faces)
-    fn = np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])  # length = 2 × area
+    fn = np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])
     _, at = np.unique(np.round(v, 9), axis=0, return_inverse=True)
-    at = at.ravel()
-    acc = np.zeros((at.max() + 1, 3))
-    for k in range(3):
-        np.add.at(acc, at[f[:, k]], fn)
-    n = acc[at]
+    w = at.ravel()[f]  # welded corners
+    nf = len(f)
+    face, k = np.repeat(np.arange(nf), 3), np.tile(np.arange(3), nf)
+    a, b = w[face, k], w[face, (k + 1) % 3]
+    key = np.minimum(a, b) * (w.max() + 1) + np.maximum(a, b)
+    order = np.argsort(key, kind="stable")
+    key, face, k = key[order], face[order], k[order]
+    _, start, uses = np.unique(key, return_index=True, return_counts=True)
+    i = start[uses == 2]  # an edge of exactly two faces (a third: no join, the corners stay apart)
+    j = i + 1
+    unit = fn / np.linalg.norm(fn, axis=1, keepdims=True).clip(1e-30)
+    smooth = (unit[face[i]] * unit[face[j]]).sum(1) > np.cos(np.radians(crease))
+    i, j = i[smooth], j[smooth]
+    rows, cols = [], []
+    for di in (0, 1):  # both ends of the shared edge: the corner of that position in each face
+        ci = face[i] * 3 + (k[i] + di) % 3
+        pos = w[face[i], (k[i] + di) % 3]
+        cj = face[j] * 3 + np.argmax(w[face[j]] == pos[:, None], axis=1)
+        rows.append(ci)
+        cols.append(cj)
+    rows, cols = np.concatenate(rows), np.concatenate(cols)
+    graph = coo_matrix((np.ones(len(rows)), (rows, cols)), shape=(3 * nf, 3 * nf))
+    group = connected_components(graph, directed=False)[1]
+    # a fan can chain round a knife-thin tip (a hem 8k triangles cannot hold), each step under `crease`, to a
+    # group normal far off some of its faces: such a corner keeps its own face's normal (shades flat)
+    acc = np.zeros((group.max() + 1, 3))
+    np.add.at(acc, group, np.repeat(fn, 3, axis=0))
+    toward = (acc[group] * np.repeat(unit, 3, axis=0)).sum(1)
+    off = toward < 0.5 * np.linalg.norm(acc[group], axis=1)
+    group[off] = group.max() + 1 + np.flatnonzero(off)
+    return group, fn, at.ravel()
+
+
+def smooth_normals(vertices, faces, crease: float = 90.0) -> np.ndarray:
+    """Smooth vertex normals [V,3]: area-weighted face normals summed over each smoothing group (_corner_groups:
+    the copies of a vertex split at a UV seam share one, no shading crease there; faces meeting at over `crease`
+    degrees do not). A vertex in two groups takes its larger one's: split_creases gives it one per group.
+    A vertex of no face takes its position's normal, +Y with no face there either."""
+    f = np.asarray(faces)
+    if not len(f):
+        return np.tile([0.0, 1.0, 0.0], (len(vertices), 1))
+    group, fn, at = _corner_groups(vertices, f, crease)
+    area = np.repeat(np.linalg.norm(fn, axis=1), 3)
+    acc = np.zeros((group.max() + 1, 3))
+    np.add.at(acc, group, np.repeat(fn, 3, axis=0))
+    pick, here = np.full(len(vertices), -1), np.full(at.max() + 1, -1)
+    order = np.lexsort((area, f.ravel()))  # per vertex, its largest corner's group last
+    pick[f.ravel()[order]] = group[order]
+    here[at[f.ravel()[order]]] = group[order]  # a vertex of no face: its position's
+    pick = np.where(pick < 0, here[at], pick)
+    n = np.where(pick[:, None] >= 0, acc[pick.clip(0)], 0.0)
     length = np.linalg.norm(n, axis=1, keepdims=True)
     return np.where(length > 1e-20, n / length.clip(1e-20), [[0.0, 1.0, 0.0]])
+
+
+def split_creases(vertices, faces, uv=None, crease: float = 90.0):
+    """(vertices, faces, uv) with a vertex copied once per smoothing group it is in (_corner_groups): a
+    hard edge then holds two normals, which smooth_normals gives back from the file alone."""
+    f = np.asarray(faces)
+    group = _corner_groups(vertices, f, crease)[0]
+    pairs, inverse = np.unique(np.stack([f.ravel(), group], 1), axis=0, return_inverse=True)
+    out = np.asarray(vertices)[pairs[:, 0]], inverse.reshape(-1, 3)
+    return (*out, None if uv is None else np.asarray(uv)[pairs[:, 0]])
 
 
 def write_glb(path, vertices, faces, uv=None) -> None:
@@ -680,3 +742,92 @@ def denoise_surface(
             step.index_add_(0, f[:, k], d)
         v = v + step / count.clamp_min(1)[:, None]
     return v.cpu().numpy()
+
+
+def fit_to_surface(
+    vertices, faces, ref_vertices, ref_faces, cell: float
+) -> tuple[np.ndarray, dict]:
+    """(vertices, info) of a watertight voxel rebuild (Generate's repair: a solid cut contoured half a cell
+    outside the generator's surface, steps on every panel off the grid's axes) moved back onto `ref`, the
+    generator's own surface, without folding it. After ManifoldPlus (Huang et al. 2020): each vertex lands
+    where a ray along its normal (either way, within 2 cells) meets `ref`, never sideways onto a crease as the
+    closest point would (vertices piled along creases: weld lines); a vertex whose faces would turn over 60°
+    takes half the step, up to 8 times; between rounds the vertices are evened out in their tangent planes.
+    A vertex with no hit (a lid over an opening the rebuild closed) takes its neighbours' move. Then
+    denoise_surface (edge-aware) straightens the rims a crease leaves, under the same no-flip rule.
+    Measured on a 2.9M-face character (RTX 5060 Ti): tabard normals' p95 spread 45° → 13.7° (the
+    generator's 13.6°), 0.85 → 0.40 mm from its surface, about 27 s. Needs CUDA (cumesh's BVH)."""
+    import cumesh
+    import torch
+
+    dev = "cuda"
+    v = torch.tensor(np.asarray(vertices), dtype=torch.float32, device=dev)
+    f = torch.tensor(np.asarray(faces), dtype=torch.long, device=dev)
+    bvh = cumesh.cuBVH(
+        torch.tensor(np.asarray(ref_vertices), dtype=torch.float32, device=dev),
+        torch.tensor(np.asarray(ref_faces), dtype=torch.int32, device=dev),
+    )
+    edges = torch.cat([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+    edges = torch.cat([edges, edges.flip(1)])
+    count = torch.zeros(len(v), device=dev).index_add_(
+        0, edges[:, 0], torch.ones(len(edges), device=dev)
+    )
+
+    def face_normals(x):
+        n = torch.cross(x[f[:, 1]] - x[f[:, 0]], x[f[:, 2]] - x[f[:, 0]], dim=1)
+        return torch.nn.functional.normalize(n, dim=1), n.norm(dim=1)
+
+    def vertex_normals(x):
+        n = torch.cross(x[f[:, 1]] - x[f[:, 0]], x[f[:, 2]] - x[f[:, 0]], dim=1)
+        acc = torch.zeros_like(x)
+        for k in range(3):
+            acc.index_add_(0, f[:, k], n)
+        return torch.nn.functional.normalize(acc, dim=1)
+
+    def ring_mean(x):
+        return (
+            torch.zeros_like(x).index_add_(0, edges[:, 0], x[edges[:, 1]])
+            / count.clamp_min(1)[:, None]
+        )
+
+    start, _ = face_normals(v)
+
+    def unfolded(x, target, step):  # the step each vertex can take with no face turned over 60°
+        for _ in range(8):
+            n, area = face_normals(x + step[:, None] * (target - x))
+            bad = ((n * start).sum(1) < 0.5) | (area < 1e-12)
+            if not bad.any():
+                break
+            hit = torch.zeros(len(x), dtype=torch.bool, device=dev)
+            hit[f[bad].flatten()] = True
+            step = torch.where(hit, step * 0.5, step)
+        return x + step[:, None] * (target - x)
+
+    v0 = v.clone()
+    for r in range(4):
+        n = vertex_normals(v)
+        target, best = v.clone(), torch.full((len(v),), 2.0 * cell, device=dev)
+        for way in (1.0, -1.0):
+            hit, face, t = bvh.ray_trace(v, way * n)
+            ok = (face >= 0) & (t <= best)
+            target = torch.where(ok[:, None], hit, target)
+            best = torch.where(ok, t, best)
+        v = unfolded(v, target, torch.ones(len(v), device=dev))
+        if r < 3:
+            for _ in range(3):  # sideways only: the shape and its creases stay
+                n = vertex_normals(v)
+                d = ring_mean(v) - v
+                v = unfolded(
+                    v,
+                    v + 0.5 * (d - (d * n).sum(1, keepdim=True) * n),
+                    torch.ones(len(v), device=dev),
+                )
+    missed = bvh.unsigned_distance(v)[0] > 0.25 * cell
+    move = v - v0
+    for _ in range(20):
+        move = torch.where(missed[:, None], ring_mean(move), move)
+    v = v0 + move
+    smooth = torch.tensor(denoise_surface(v.cpu().numpy(), faces), dtype=torch.float32, device=dev)
+    start, _ = face_normals(v)
+    v = unfolded(v, smooth, torch.ones(len(v), device=dev))
+    return v.cpu().numpy(), {"fit_missed": int(missed.sum())}

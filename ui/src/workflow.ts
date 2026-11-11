@@ -355,6 +355,14 @@ export const TOOLS: Tool[] = [
   },
   { id: "prepare", label: "Prepare model", task: "prepare", what: "Simplify and texture the model for your project, all the steps in a row.", needs: "a model", ok: mesh },
   { id: "clean", label: "Clean", task: "prepare", what: "Close holes, drop loose bits, stand it upright and set its size.", needs: "a model", ok: mesh },
+  {
+    id: "transform",
+    label: "Turn and move",
+    task: "prepare",
+    what: "Turn the model and move it by hand, and stand it on the ground. Textures stay as they are.",
+    needs: "a model without a skeleton",
+    ok: (c) => mesh(c) && !["skeleton", "markers", "parts"].some((k) => k in c.v.outputs),
+  },
   { id: "remesh", label: "Simplify", task: "prepare", what: "Fewer triangles, or quads, for your game.", needs: "a model", ok: mesh },
   { id: "uv", label: "Unwrap", task: "prepare", what: "Lay the surface out flat so it can carry a texture.", needs: "a model", ok: mesh },
   {

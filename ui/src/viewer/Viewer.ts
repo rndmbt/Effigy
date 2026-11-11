@@ -1630,6 +1630,26 @@ export class Viewer {
     });
   }
 
+  /** Turn and move: the transform step's move shown on the loaded model before it runs (turns about X, then Y,
+   * then Z in degrees; then, with `ground`, its base centre onto the origin; then moved by `move` metres).
+   * null puts it back where the file has it. */
+  previewMove(turn: [number, number, number] | null, move: [number, number, number] = [0, 0, 0], ground = true) {
+    if (!this.model) return;
+    const d = THREE.MathUtils.degToRad;
+    this.model.position.set(0, 0, 0);
+    this.model.rotation.set(...((turn ?? [0, 0, 0]).map(d) as [number, number, number]), "ZYX"); // X first, as the step
+    this.model.updateMatrixWorld(true);
+    if (turn) {
+      const box = new THREE.Box3().setFromObject(this.model);
+      if (ground) this.model.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+      this.model.position.add(new THREE.Vector3(...move));
+      this.model.updateMatrixWorld(true);
+    }
+    const box = new THREE.Box3().setFromObject(this.model);
+    this.grid.position.set((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2);
+    this.dirty = true;
+  }
+
   private frameModel() {
     const box = new THREE.Box3().setFromObject(this.model!);
     const center = box.getCenter(new THREE.Vector3());

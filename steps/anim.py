@@ -21,7 +21,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from steps import _anim, _clear, _templates
+from steps import _anim, _clear, _glb, _templates
 from steps._blender import BlenderError, run_blender
 from steps._common import StepError, main, progress
 
@@ -168,6 +168,7 @@ def _finish(
             new, skipped = None, str(e) if isinstance(e, StepError) else f"{type(e).__name__}: {e}"
         if new:
             (out / "rigged_anim.glb").write_bytes(new)
+    _glb.copy_tangents(src / "rigged.glb", out / "rigged_anim.glb")  # Blender's export drops them
     for f in (
         "skeleton.json",
         "qa.json",

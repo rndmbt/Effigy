@@ -217,31 +217,14 @@
     }
   },
   "241": {
-    "class_type": "RemeshMesh",
+    "class_type": "EffigyRemesh",
     "inputs": {
       "resolution": 768,
-      "sign_mode": "solid",
-      "sign_mode.fill": 20,
-      "sign_mode.qef": false,
-      "band": 1,
-      "project_back": 0,
-      "fix_poles": false,
+      "fill": 20,
       "smooth_iters": 2,
       "drop_small_components": 0.001,
-      "precluster_max_verts": 20000000,
       "mesh": [
         "unload_texture_decode",
-        0
-      ]
-    }
-  },
-  "186": {
-    "class_type": "DecimateMesh",
-    "inputs": {
-      "target_face_count": 700000,
-      "placement_mode": "midpoint",
-      "mesh": [
-        "241",
         0
       ]
     }
@@ -498,10 +481,6 @@
       ],
       "repaired_mesh": [
         "241",
-        0
-      ],
-      "mesh": [
-        "186",
         0
       ],
       "voxel_colors": [

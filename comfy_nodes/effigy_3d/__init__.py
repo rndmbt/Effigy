@@ -44,6 +44,55 @@ class EffigyUnload:
         return (value,)
 
 
+class EffigyRemesh:
+    """RemeshMesh's solid mode on a grid fitted to the model's own bounds (RemeshMesh spans the fixed unit
+    cube: a model filling 88 % of it got 88 % of the cells). Effigy's fit_to_surface works out the cell size
+    from the input's bounds the same way: (resolution + 3) / resolution * 1.02 * longest side / resolution."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "mesh": ("MESH",),
+                "resolution": ("INT", {"default": 768, "min": 64, "max": 2048}),
+                "fill": ("FLOAT", {"default": 20.0, "min": 0.0, "max": 1000.0}),
+                "smooth_iters": ("INT", {"default": 2, "min": 0, "max": 20}),
+                "drop_small_components": ("FLOAT", {"default": 0.001, "min": 0.0, "max": 0.5}),
+            }
+        }
+
+    RETURN_TYPES = ("MESH",)
+    FUNCTION = "execute"
+    CATEGORY = "Effigy"
+
+    def execute(self, mesh, resolution, fill, smooth_iters, drop_small_components):
+        from comfy_api.latest import Types
+        from comfy_extras.mesh3d.postprocess.remesh import remesh_narrow_band_dc
+
+        dev = mm.get_torch_device()
+        v, f, *_ = get_mesh_batch_item(mesh, 0)
+        v, f = v.to(dev).float(), f.to(dev).long()
+        lo, hi = v.min(0).values, v.max(0).values
+        side = float((hi - lo).max()) * 1.02
+        rv, rf, _ = remesh_narrow_band_dc(
+            v,
+            f,
+            resolution=resolution,
+            band=1.0,
+            project_back=0.0,
+            qef=False,
+            sign_mode="solid",
+            fill=fill,
+            smooth_iters=smooth_iters,
+            drop_small_components=drop_small_components,
+            drop_inverted_components=False,
+            drop_enclosed_components=False,
+            scale=(resolution + 3.0) / resolution * side,
+            center=(lo + hi) / 2,
+        )
+        return (Types.MESH(vertices=rv[None].cpu(), faces=rf[None].int().cpu()),)
+
+
 class EffigyExport3D:
     @classmethod
     def INPUT_TYPES(cls):
@@ -51,7 +100,6 @@ class EffigyExport3D:
             "required": {
                 "raw_mesh": ("MESH",),
                 "repaired_mesh": ("MESH",),
-                "mesh": ("MESH",),
                 "voxel_colors": ("VOXEL",),
                 "fov": ("FLOAT",),
                 "token": ("STRING",),
@@ -63,11 +111,11 @@ class EffigyExport3D:
     OUTPUT_NODE = True
     CATEGORY = "Effigy"
 
-    def execute(self, raw_mesh, repaired_mesh, mesh, voxel_colors, fov, token):
+    def execute(self, raw_mesh, repaired_mesh, voxel_colors, fov, token):
         if not re.fullmatch(r"[a-f0-9]{32}", token):
             raise ValueError("Invalid generation token")
         arrays = {}
-        for prefix, item in [("raw", raw_mesh), ("repaired", repaired_mesh), ("mesh", mesh)]:
+        for prefix, item in [("raw", raw_mesh), ("repaired", repaired_mesh)]:
             v, f, *_ = get_mesh_batch_item(item, 0)
             arrays[prefix + "_vertices"] = v.detach().float().cpu().numpy()
             arrays[prefix + "_faces"] = f.detach().int().cpu().numpy()
@@ -127,6 +175,7 @@ class EffigyMultiViewConditioning:
 
 NODE_CLASS_MAPPINGS = {
     "EffigyUnload": EffigyUnload,
+    "EffigyRemesh": EffigyRemesh,
     "EffigyExport3D": EffigyExport3D,
     "EffigyMultiViewConditioning": EffigyMultiViewConditioning,
 }

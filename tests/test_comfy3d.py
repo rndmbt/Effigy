@@ -41,7 +41,7 @@ def test_comfy_generation_graph_has_quality_and_release_stages():
     assert {
         "MoGeInference",
         "Pixal3DConditioning",
-        "RemeshMesh",
+        "EffigyRemesh",
         "EffigyExport3D",
         "EffigyUnload",
     } <= kinds

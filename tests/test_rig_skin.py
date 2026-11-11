@@ -3,6 +3,7 @@
 
 import json
 
+import numpy as np
 import pytest
 
 from steps import rig_skin
@@ -101,3 +102,35 @@ def test_rigid_bad_params(tmp_path, rigid):
     with pytest.raises(StepError) as e:
         rig_skin.rigid_bones(parts_rig(tmp_path), rigid)
     assert e.value.code == "bad_params"
+
+
+def test_copy_tangents_gives_a_blender_export_the_bakes_frame_back(tmp_path):
+    pytest.importorskip("torch")  # the bake writer
+    import trimesh
+
+    from steps import _glb
+    from steps._bake import write_glb
+    from steps._mesh import smooth_normals
+
+    s = trimesh.creation.icosphere(2)
+    uv = (s.vertices[:, :2] + 1) / 2
+    px = np.full((4, 4, 3), 128, np.uint8)
+    write_glb(
+        tmp_path / "baked.glb",
+        s.vertices,
+        s.faces,
+        uv,
+        np.full((4, 4, 4), 255, np.uint8),
+        px,
+        smooth_normals(s.vertices, s.faces),  # as bake writes them
+        px,
+    )
+    doc, blob = _glb.read(tmp_path / "baked.glb")
+    att = doc["meshes"][0]["primitives"][0]["attributes"]
+    want = _glb.accessor(doc, blob, att.pop("TANGENT")).copy()
+    _glb.write(tmp_path / "skinned.glb", doc, blob)  # as Blender writes it: no TANGENT
+    assert _glb.copy_tangents(tmp_path / "baked.glb", tmp_path / "skinned.glb") == 1
+    doc, blob = _glb.read(tmp_path / "skinned.glb")
+    got = _glb.accessor(doc, blob, doc["meshes"][0]["primitives"][0]["attributes"]["TANGENT"])
+    assert np.allclose(got, want)
+    assert _glb.copy_tangents(tmp_path / "baked.glb", tmp_path / "skinned.glb") == 0  # has one now

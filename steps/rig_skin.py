@@ -206,6 +206,9 @@ def run(op, in_dir, out_dir, params):
                 extra = _blender(src, out, int(params.get("voxels", 120)))
             else:
                 extra = _skintokens(src, out)
+            # Blender's export drops TANGENT: the bake's frame back, or the normal map shades differently
+            if (src / "mesh.glb").is_file():
+                _glb.copy_tangents(src / "mesh.glb", out / f"rigged_{e}.glb")
             if bones:
                 make_rigid(out / f"rigged_{e}.glb", bones)
             reports[e] = _qa(out, e, creature) | extra

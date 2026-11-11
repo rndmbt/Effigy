@@ -29,7 +29,7 @@ import numpy as np
 from PIL import Image
 
 from steps._common import StepError, library_to_trellis, load_ovoxel, main, progress
-from steps._mesh import detaper, smooth_normals, textured, uv_overlap
+from steps._mesh import detaper, smooth_normals, split_creases, textured, uv_overlap
 
 
 def find_source(
@@ -149,6 +149,9 @@ def run(op, in_dir, out_dir, params):
     mesh = trimesh.load(src / glb, force="mesh", process=False)
     if getattr(mesh.visual, "uv", None) is None:
         raise StepError("missing_input", f"{glb} has no UVs: run the uv step first")
+    # a vertex on an edge sharper than 90° (a thin plate's rim) once per side: its normal, the map's frame
+    sv, sf, suv = split_creases(mesh.vertices, mesh.faces, mesh.visual.uv)
+    mesh = trimesh.Trimesh(sv, sf, process=False, visual=trimesh.visual.TextureVisuals(uv=suv))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     choice = params.get("source", "auto")
     if choice not in ("auto", "current", "generator"):
@@ -274,8 +277,7 @@ def run(op, in_dir, out_dir, params):
         project,
         p,
         hi,
-        clean,
-    )  # the big per-texel tensors: AO needs the VRAM
+    )  # the big per-texel tensors: AO needs the VRAM (a cleaned hi surface stays: AO is cast against it)
 
     progress(0.7, "levelling the UV seams")
     uv_np = uv.cpu().numpy()
@@ -300,23 +302,33 @@ def run(op, in_dir, out_dir, params):
         t0 = time.time()
         fid, _, _, _, p1, n1 = texels(size)
         m1 = fid >= 0
-        # rays go against this (clean, remeshed) mesh, not the hi one: TRELLIS's hi mesh is a double shell
-        # with interior layers, and rays from its inner layer hit the outer one (black blotches, M43a bench)
+        # never against the raw hi mesh: TRELLIS's is a double shell with interior layers, and rays from its inner
+        # layer hit the outer one (black blotches, M43a bench). A cleaned one, or else this (remeshed) mesh
         import cumesh
 
-        bvh = cumesh.cuBVH(v, f)
         diag = float((v.amax(0) - v.amin(0)).norm())
         voxel = 1 / vol["resolution"] if vol else diag / 1024
-        # a few faces of the low mesh face inward (turned); an inner shell's faces are enclosed (hidden: no
-        # occlusion); where a torn outer shell shows the inner one, the AO map holds a tiny dark island (filled)
-        inward, enclosed = ao_faces(v, f, n, bvh, voxel)
-        n1[inward[fid[m1]]] *= -1
-        ao = ao_texels(bvh, p1, n1, voxel, 0.1 * diag, rays=int(params.get("ao_rays", 256)))
+        rays = int(params.get("ao_rays", 256))
+        if clean is not None:
+            # a cleaned hi surface (Clean's solid, Generate's fitted rebuild) is one closed shell: rays from each
+            # texel's point on it, against it. A thin part's sides, as close as the generator made them, cross
+            # in the low mesh (a tabard at 8k triangles: 98 of 348 faces turned inward, blotches)
+            hn1, hp1 = _project(clean[1], p1, n1)
+            ao = ao_texels(clean[1].bvh, hp1, hn1, voxel, 0.1 * diag, rays=rays)
+            hidden = torch.zeros(len(ao), dtype=torch.bool, device=dev)
+        else:
+            # a few faces of the low mesh face inward (turned); an inner shell's faces are enclosed (hidden: no
+            # occlusion); where a torn outer shell shows the inner one, the AO map holds a tiny dark island
+            bvh = cumesh.cuBVH(v, f)
+            inward, enclosed = ao_faces(v, f, n, bvh, voxel)
+            n1[inward[fid[m1]]] *= -1
+            ao = ao_texels(bvh, p1, n1, voxel, 0.1 * diag, rays=rays)
+            hidden = enclosed[fid[m1]]
         # 32 rays a texel left a visible grain: more rays, then a seam-free blur over the surface
         if sigma := float(params.get("ao_smooth", 2.0)) * texel_size(v, f, uv, size):
             ao = surface_blur(p1, n1, ao[:, None], sigma)[:, 0]
-        hidden = enclosed[fid[m1]]
         ao[hidden] = 1
+        del clean
         img = torch.ones(size, size, device=dev)
         img[m1] = ao
         img, filled = fill_dark_islands(img.cpu().numpy(), m1.cpu().numpy())
@@ -499,22 +511,26 @@ def surface_blur(pts, normals, values, sigma: float):
     """A Gaussian (sigma in the mesh's units) of per-texel values [K,C] over the surface: each texel takes the texels
     near it in 3D whatever UV island they are in, so both sides of a seam blur alike, weighted 0 (60° or more) to 1
     (30° or less) by how their normals agree with its own (a thin part's far side stays out, a crease keeps its edge).
-    Texels are pooled into cubes of side sigma, each reading the 27 around its own; one with no match keeps its value."""
+    Texels are pooled into cubes of side sigma and, within a cube, by the axis their normal mostly faces (6 ways: a
+    cloth's two sides in one cube pooled together averaged its front with its back, dark blotches); each reads the
+    pools of the 27 cubes around its own. One with no match keeps its value."""
     import torch
 
     q = torch.floor(pts / sigma).long()
     q -= q.min(0).values - 1  # ≥ 1: a neighbour one cube down stays ≥ 0
     span = int(q.max()) + 2
+    axis = normals.abs().argmax(1)
+    side = axis * 2 + (normals.gather(1, axis[:, None])[:, 0] < 0).long()  # 0..5
 
-    def key(c):
-        return (c[:, 0] * span + c[:, 1]) * span + c[:, 2]
+    def key(c, way):
+        return ((c[:, 0] * span + c[:, 1]) * span + c[:, 2]) * 6 + way
 
-    cubes, inv = torch.unique(key(q), return_inverse=True)
-    dev, m = pts.device, len(cubes)
+    pools, inv = torch.unique(key(q, side), return_inverse=True)
+    dev, m = pts.device, len(pools)
     total = values.new_zeros(m, values.shape[1]).index_add_(0, inv, values)
     nsum = torch.zeros(m, 3, device=dev).index_add_(0, inv, normals)
     count = torch.zeros(m, device=dev).index_add_(0, inv, torch.ones_like(inv, dtype=pts.dtype))
-    # ponytail: a cube's texels weighted at its centre, not one by one; per-texel pairs if that ever shows
+    # ponytail: a pool's texels weighted at its centre, not one by one; per-texel pairs if that ever shows
     centre = torch.zeros(m, 3, device=dev).index_add_(0, inv, pts) / count[:, None]
     mean = torch.nn.functional.normalize(nsum, dim=1)
     out = torch.zeros(len(pts), values.shape[1], device=dev, dtype=values.dtype)
@@ -522,13 +538,14 @@ def surface_blur(pts, normals, values, sigma: float):
     for dx in (-1, 0, 1):
         for dy in (-1, 0, 1):
             for dz in (-1, 0, 1):
-                k = key(q + q.new_tensor([dx, dy, dz]))
-                i = torch.searchsorted(cubes, k).clamp(max=len(cubes) - 1)
-                w = torch.exp(-((pts - centre[i]) ** 2).sum(1) / (2 * sigma * sigma))
-                agree = ((mean[i] * normals).sum(1) - 0.5) / (0.87 - 0.5)  # 60° → 0, 30° → 1
-                w = w * (cubes[i] == k) * agree.clamp(0, 1)
-                out += w[:, None] * total[i]
-                weight += w * count[i]
+                for way in range(6):
+                    k = key(q + q.new_tensor([dx, dy, dz]), torch.full_like(side, way))
+                    i = torch.searchsorted(pools, k).clamp(max=len(pools) - 1)
+                    w = torch.exp(-((pts - centre[i]) ** 2).sum(1) / (2 * sigma * sigma))
+                    agree = ((mean[i] * normals).sum(1) - 0.5) / (0.87 - 0.5)  # 60° → 0, 30° → 1
+                    w = w * (pools[i] == k) * agree.clamp(0, 1)
+                    out += w[:, None] * total[i]
+                    weight += w * count[i]
     return torch.where(weight[:, None] > 0, out / weight.clamp_min(1e-12)[:, None], values)
 
 
