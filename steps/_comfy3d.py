@@ -134,9 +134,9 @@ def run(in_dir, out_dir, p: dict) -> dict:
     from steps._bake import write_glb as write_textured
     from steps._blender import BlenderError, run_blender
     from steps._mesh import (
-        fit_to_surface,
         mesh_report,
         smooth_normals,
+        smooth_surface,
         split_creases,
         uv_report,
         write_glb,
@@ -149,12 +149,9 @@ def run(in_dir, out_dir, p: dict) -> dict:
     arrays, info = sample(Path(in_dir), p)
     raw_v, raw_f = arrays["raw_vertices"], arrays["raw_faces"]
     hi_v, hi_f = arrays["repaired_vertices"], arrays["repaired_faces"]
-    # the rebuild back onto the generator's surface (no voxel steps), its cell as comfy_nodes' EffigyRemesh's
-    progress(0.55, "fitting the watertight rebuild back onto the generated surface")
-    res = int(p.get("repair_resolution", 768))
-    cell = (res + 3) / res * 1.02 * float(np.ptp(raw_v, 0).max()) / res
+    progress(0.55, "smoothing the watertight rebuild's voxel steps")
     repaired = mesh_report(hi_v, hi_f)
-    hi_v, fit = fit_to_surface(hi_v, hi_f, raw_v, raw_f, cell)
+    hi_v, fit = smooth_surface(hi_v, hi_f)
     mesh_v, mesh_f = _cumesh_simplify(hi_v, hi_f, int(p["faces"]), True)
     frame = trellis_to_library(hi_v.min(0), hi_v.max(0), float(p["height_m"]), np.eye(4))
     save_ovoxel(
@@ -167,7 +164,7 @@ def run(in_dir, out_dir, p: dict) -> dict:
     geometry = {
         "raw": mesh_report(raw_v, raw_f),
         "repaired": repaired,
-        "fitted": mesh_report(hi_v, hi_f) | fit,
+        "smoothed": mesh_report(hi_v, hi_f) | fit,
         "final": mesh_report(mesh_v, mesh_f),
     }
     (out / "geometry_report.json").write_text(json.dumps(geometry, indent=2), encoding="utf-8")

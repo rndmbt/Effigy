@@ -744,90 +744,31 @@ def denoise_surface(
     return v.cpu().numpy()
 
 
-def fit_to_surface(
-    vertices, faces, ref_vertices, ref_faces, cell: float
-) -> tuple[np.ndarray, dict]:
-    """(vertices, info) of a watertight voxel rebuild (Generate's repair: a solid cut contoured half a cell
-    outside the generator's surface, steps on every panel off the grid's axes) moved back onto `ref`, the
-    generator's own surface, without folding it. After ManifoldPlus (Huang et al. 2020): each vertex lands
-    where a ray along its normal (either way, within 2 cells) meets `ref`, never sideways onto a crease as the
-    closest point would (vertices piled along creases: weld lines); a vertex whose faces would turn over 60°
-    takes half the step, up to 8 times; between rounds the vertices are evened out in their tangent planes.
-    A vertex with no hit (a lid over an opening the rebuild closed) takes its neighbours' move. Then
-    denoise_surface (edge-aware) straightens the rims a crease leaves, under the same no-flip rule.
-    Measured on a 2.9M-face character (RTX 5060 Ti): tabard normals' p95 spread 45° → 13.7° (the
-    generator's 13.6°), 0.85 → 0.40 mm from its surface, about 27 s. Needs CUDA (cumesh's BVH)."""
-    import cumesh
-    import torch
+def smooth_surface(vertices, faces) -> tuple[np.ndarray, dict]:
+    """(vertices, info) of a watertight voxel rebuild (Generate's repair) with its voxel terraces smoothed out:
+    the contour lies up to half a cell off the generated surface, in steps on every panel at a slant to the grid.
+    denoise_surface, 20 rounds, 30 moves, sin2 0.35 (a crease of 60° or more stays, the terraces' facets of up
+    to 45° go), then a vertex whose faces would turn over 60° takes half its move, up to 10 times (a thin rim
+    folding). Not snapped back onto the generated surface: where that is a cloud of fragments (frayed cloth,
+    fur) every vertex landed on a different one. Chosen on four generations (two characters, a dog, a car):
+    a flat panel's normal spread (p95) 45° → 14.9°, the raw surface's 13.6°; hard edges kept; folds stay where
+    the rebuild was already lumpy (a fur collar). info: faces whose move was cut short."""
+    v0 = np.asarray(vertices, np.float64)
+    f = np.asarray(faces, np.int64)
+    v1 = denoise_surface(v0, f, 20, 30, 0.35)
 
-    dev = "cuda"
-    v = torch.tensor(np.asarray(vertices), dtype=torch.float32, device=dev)
-    f = torch.tensor(np.asarray(faces), dtype=torch.long, device=dev)
-    bvh = cumesh.cuBVH(
-        torch.tensor(np.asarray(ref_vertices), dtype=torch.float32, device=dev),
-        torch.tensor(np.asarray(ref_faces), dtype=torch.int32, device=dev),
-    )
-    edges = torch.cat([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
-    edges = torch.cat([edges, edges.flip(1)])
-    count = torch.zeros(len(v), device=dev).index_add_(
-        0, edges[:, 0], torch.ones(len(edges), device=dev)
-    )
+    def normals(x):
+        n = np.cross(x[f[:, 1]] - x[f[:, 0]], x[f[:, 2]] - x[f[:, 0]])
+        size = np.linalg.norm(n, axis=1)
+        return n / size.clip(1e-30)[:, None], size
 
-    def face_normals(x):
-        n = torch.cross(x[f[:, 1]] - x[f[:, 0]], x[f[:, 2]] - x[f[:, 0]], dim=1)
-        return torch.nn.functional.normalize(n, dim=1), n.norm(dim=1)
-
-    def vertex_normals(x):
-        n = torch.cross(x[f[:, 1]] - x[f[:, 0]], x[f[:, 2]] - x[f[:, 0]], dim=1)
-        acc = torch.zeros_like(x)
-        for k in range(3):
-            acc.index_add_(0, f[:, k], n)
-        return torch.nn.functional.normalize(acc, dim=1)
-
-    def ring_mean(x):
-        return (
-            torch.zeros_like(x).index_add_(0, edges[:, 0], x[edges[:, 1]])
-            / count.clamp_min(1)[:, None]
-        )
-
-    start, _ = face_normals(v)
-
-    def unfolded(x, target, step):  # the step each vertex can take with no face turned over 60°
-        for _ in range(8):
-            n, area = face_normals(x + step[:, None] * (target - x))
-            bad = ((n * start).sum(1) < 0.5) | (area < 1e-12)
-            if not bad.any():
-                break
-            hit = torch.zeros(len(x), dtype=torch.bool, device=dev)
-            hit[f[bad].flatten()] = True
-            step = torch.where(hit, step * 0.5, step)
-        return x + step[:, None] * (target - x)
-
-    v0 = v.clone()
-    for r in range(4):
-        n = vertex_normals(v)
-        target, best = v.clone(), torch.full((len(v),), 2.0 * cell, device=dev)
-        for way in (1.0, -1.0):
-            hit, face, t = bvh.ray_trace(v, way * n)
-            ok = (face >= 0) & (t <= best)
-            target = torch.where(ok[:, None], hit, target)
-            best = torch.where(ok, t, best)
-        v = unfolded(v, target, torch.ones(len(v), device=dev))
-        if r < 3:
-            for _ in range(3):  # sideways only: the shape and its creases stay
-                n = vertex_normals(v)
-                d = ring_mean(v) - v
-                v = unfolded(
-                    v,
-                    v + 0.5 * (d - (d * n).sum(1, keepdim=True) * n),
-                    torch.ones(len(v), device=dev),
-                )
-    missed = bvh.unsigned_distance(v)[0] > 0.25 * cell
-    move = v - v0
-    for _ in range(20):
-        move = torch.where(missed[:, None], ring_mean(move), move)
-    v = v0 + move
-    smooth = torch.tensor(denoise_surface(v.cpu().numpy(), faces), dtype=torch.float32, device=dev)
-    start, _ = face_normals(v)
-    v = unfolded(v, smooth, torch.ones(len(v), device=dev))
-    return v.cpu().numpy(), {"fit_missed": int(missed.sum())}
+    start, _ = normals(v0)
+    step, cut = np.ones(len(v0)), 0
+    for _ in range(10):
+        n, size = normals(v0 + step[:, None] * (v1 - v0))
+        bad = ((n * start).sum(1) < 0.5) | (size < 1e-14)
+        if not bad.any():
+            break
+        cut = max(cut, int(bad.sum()))
+        step[np.unique(f[bad])] *= 0.5
+    return v0 + step[:, None] * (v1 - v0), {"smooth_cut": cut}

@@ -15,10 +15,10 @@ milestone, is in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) §4.
 - The raw material volume and raw mesh are preserved alongside the repaired high-poly normal source, so
   Prepare can bake materials from the original surface and normals from the repaired one. Geometry and UV
   reports accompany generation. Repair may close intentional openings or soften detail; inspect the result.
-- **No more voxel steps on the repaired high-poly.** The watertight rebuild used to sit half a voxel off the
-  generated surface, leaving a staircase pattern on flat panels that showed up in the normal map and the
-  ambient occlusion of every simplified model. Its grid now fits the model, and the rebuild is fitted back
-  onto the generated surface without folding it: still closed, no holes, about 7 seconds more.
+- **No more voxel steps on the repaired high-poly.** The watertight rebuild left a staircase pattern on flat
+  panels that showed up in the normal map and the ambient occlusion of every simplified model. Its grid now
+  fits the model, and an edge-aware smoothing takes the steps off while hard edges stay: still closed, no
+  holes, about 6 seconds more.
 - **Ambient occlusion from the high-poly.** When the chain has a cleaned high-poly surface (every ComfyUI
   generation, or Clean's rebuild), the baked AO is cast from it: contact shadows in grooves and under rims,
   and no dark blotches on thin cloth whose two sides cross in the simplified mesh.

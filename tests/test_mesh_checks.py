@@ -1065,20 +1065,18 @@ def test_normals_split_at_hard_edges_and_stay_smooth_elsewhere():
     assert np.allclose(smooth_normals(sv, sf), smooth_normals(*split_creases(sv, sf)[:2]))
 
 
-@pytest.mark.skipif(
-    not __import__("importlib").util.find_spec("cumesh"), reason="needs CuMesh and a GPU"
-)
-def test_fit_to_surface_takes_a_rebuild_back_onto_the_surface():
-    from steps._mesh import fit_to_surface
+def test_smooth_surface_takes_voxel_terraces_off_and_keeps_a_box_edge():
+    pytest.importorskip("torch")  # denoise_surface
+    from steps._mesh import smooth_surface
 
-    s = trimesh.creation.icosphere(5)
-    near = trimesh.creation.icosphere(4)
-    off = near.vertices * (
-        1.01 + 0.004 * np.sin(40 * near.vertices[:, 1:2])
-    )  # half a cell out, stepped
-    v, info = fit_to_surface(off, near.faces, s.vertices, s.faces, cell=0.02)
-    r = np.linalg.norm(v, axis=1)
-    assert abs(r - 1).max() < 0.004 and info["fit_missed"] == 0
-    assert (trimesh.Trimesh(v, near.faces, process=False).face_normals * v[near.faces].mean(1)).sum(
-        1
-    ).min() > 0
+    box = trimesh.creation.box(extents=(1, 1, 1))
+    for _ in range(4):
+        box = box.subdivide()
+    v = box.vertices.copy()
+    top = v[:, 1] > 0.49
+    v[top, 1] += 0.004 * np.sign(np.sin(30 * v[top, 0]))  # terraces on the top face
+    out, _ = smooth_surface(v, box.faces)
+    inner = top & (np.abs(v[:, [0, 2]]).max(1) < 0.4)  # off the rim, where the crease rightly stays
+    assert np.abs(out[inner, 1] - 0.5).mean() < 0.5 * np.abs(v[inner, 1] - 0.5).mean()
+    corner = np.argmax(v.sum(1))  # the box's corner stays a corner
+    assert np.linalg.norm(out[corner] - v[corner]) < 0.01

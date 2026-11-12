@@ -3941,19 +3941,18 @@ new orbit distance. No custom ComfyUI package is fetched at runtime.
 
 The repair is `EffigyRemesh` (in `comfy_nodes/effigy_3d`): ComfyUI's solid narrow-band dual contouring on a grid
 fitted to the model's own bounds (ComfyUI's `RemeshMesh` spans the fixed unit cube). That surface is watertight
-but sits half a cell outside the generator's and steps on every panel off the grid's axes, so
-`_mesh.fit_to_surface` moves it back (after ManifoldPlus, Huang et al. 2020): each vertex along its own normal
-onto the raw surface within two cells, a vertex whose faces would turn over 60° taking a half step (closest-point
-snapping piled vertices along creases), the vertices evened out in their tangent planes between rounds, then
-`denoise_surface` under the same no-flip rule. Measured on a 2.9M-face character (RTX 5060 Ti 16 GB, Windows 11):
-the tabard's normal spread (p95) 45° → 13.7° (the raw surface 13.6°), 0.85 → 0.40 mm from the raw surface, 6.5 s;
-still 0 open and 0 non-manifold edges. `faces` (default 200000) is then CuMesh's simplification of the fitted
+but lies up to half a cell off the generator's and steps on every panel at a slant to the grid, so
+`_mesh.smooth_surface` smooths it: `denoise_surface` (20 rounds, 30 moves, sin2 0.35: creases of 60° or more kept),
+a vertex whose faces would turn over 60° taking half its move. It is not snapped back onto the generated
+surface: where that is a cloud of fragments (frayed cloth, fur) a per-vertex snap copied the noise. Chosen on four
+generations (two characters, a dog, a car; RTX 5060 Ti 16 GB, Windows 11): a flat panel's normal spread (p95) 45° →
+14.9° (the raw surface 13.6°), 5–6 s for 2–3M faces; still 0 open and 0 non-manifold edges. `faces` (default 200000) is then CuMesh's simplification of the smoothed
 surface. The initial high-poly mesh is unwrapped through the existing UVgami subprocess, then the existing bake code
 projects materials from the raw surface and normal detail from the repaired one. `hi_trellis.ply` stays raw
 in source coordinates; `hi_clean.ply` is the repaired normal source in the library frame. Both and `ovoxel.npz`
 remain available to Prepare. Extra outputs: `basecolor.png`, `orm.png`, `normal.png`, `geometry_report.json`,
-`uv_report.json`. The geometry report covers the raw, the repaired, the fitted (`fit_missed`: vertices with no
-surface within reach, which take their neighbours' move) and the final (decimated) mesh: open
+`uv_report.json`. The geometry report covers the raw, the repaired, the smoothed (`smooth_cut`: faces whose
+move was cut short) and the final (decimated) mesh: open
 boundaries, non-manifold edges, components and tunnels;
 a watertight flag alone is not a visual-quality guarantee.
 
